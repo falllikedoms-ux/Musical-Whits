@@ -72,6 +72,35 @@ function answerText(roundId, it) {
   return `<div class="answer-line">${esc(it.title)}</div><div class="answer-sub">${esc(it.artist)}</div>`;
 }
 
+// In-page pop-ups (some places that host the game block the browser's own dialogs).
+function ask(message, yesLabel, onYes) {
+  const box = document.createElement('div');
+  box.className = 'dialog-backdrop';
+  box.innerHTML = `<div class="dialog" role="dialog" aria-modal="true">
+    <p>${esc(message)}</p>
+    <div class="row end">
+      <button class="btn btn-ghost" data-dialog="no">Cancel</button>
+      <button class="btn btn-primary" data-dialog="yes">${esc(yesLabel)}</button>
+    </div></div>`;
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dialog]');
+    if (!b && e.target !== box) return;
+    box.remove();
+    if (b && b.dataset.dialog === 'yes') onYes();
+  });
+  document.body.appendChild(box);
+  box.querySelector('[data-dialog=yes]').focus();
+}
+
+function notify(message) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.setAttribute('role', 'status');
+  t.textContent = message;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
 // ---------- scoring ----------
 
 function addPoints(team, pts) {
@@ -215,7 +244,7 @@ async function playClip(stageSeconds) {
     updatePlayButton();
   } catch (e) {
     clip = null;
-    alert('Could not play this track: ' + e.message);
+    notify('Could not play this track: ' + e.message);
   }
 }
 
@@ -680,7 +709,7 @@ async function preview(idx) {
     previewClip = makeClip(editorRound, pack[editorRound][idx], editorRound === 'r2' ? 5 : undefined);
     await previewClip.play();
   } catch (e) {
-    alert('Could not play this track: ' + e.message);
+    notify('Could not play this track: ' + e.message);
   }
 }
 
@@ -694,14 +723,17 @@ app.addEventListener('click', (e) => {
   switch (a) {
     case 'team-count': setup.count = +el.dataset.count; render(); break;
     case 'new-game':
-      if (game && game.phase !== 'end' && !confirm('Start a new game? The game in progress will be lost.')) return;
-      newGame(); break;
+      if (game && game.phase !== 'end') ask('Start a new game? The game in progress will be lost.', 'Start new game', newGame);
+      else newGame();
+      break;
     case 'resume': screen = 'game'; render(); break;
     case 'open-editor': screen = 'editor'; render(); break;
     case 'home': stopClip(); stopTriviaTimer(); if (previewClip) previewClip.stop(); screen = 'home'; render(); break;
     case 'play-again': game = null; saveGame(); screen = 'home'; render(); break;
     case 'skip-round':
-      if (confirm('Skip the rest of this round?')) { if (round().type === 'final') { game.phase = 'end'; stopClip(); saveGame(); render(); } else nextRound(); }
+      ask('Skip the rest of this round?', 'Skip round', () => {
+        if (round().type === 'final') { game.phase = 'end'; stopClip(); saveGame(); render(); } else nextRound();
+      });
       break;
     case 'start-round': startRound(); break;
     case 'next-round': nextRound(); break;
@@ -752,7 +784,7 @@ app.addEventListener('click', (e) => {
     case 'editor-tab': if (previewClip) previewClip.stop(); editorRound = el.dataset.round; render(); break;
     case 'add-item': (pack[editorRound] = pack[editorRound] || []).push(newEditorItem(editorRound)); savePack(); render(); break;
     case 'remove':
-      if (confirm('Delete this ' + (editorRound === 'r4' ? 'question' : 'track') + '?')) { pack[editorRound].splice(+el.dataset.idx, 1); savePack(); render(); }
+      ask('Delete this ' + (editorRound === 'r4' ? 'question' : 'track') + '?', 'Delete', () => { pack[editorRound].splice(+el.dataset.idx, 1); savePack(); render(); });
       break;
     case 'move': {
       const list = pack[editorRound];
@@ -774,7 +806,7 @@ app.addEventListener('click', (e) => {
       break;
     }
     case 'reset-pack':
-      if (confirm('Replace all your questions with the starter pack?')) { pack = demoPack(); savePack(); render(); }
+      ask('Replace all your questions with the starter pack?', 'Replace', () => { pack = demoPack(); savePack(); render(); });
       break;
   }
 });
@@ -821,7 +853,7 @@ app.addEventListener('change', async (e) => {
       savePack();
       render();
     } catch (err) {
-      alert('Could not load that file: ' + err.message);
+      notify('Could not load that file: ' + err.message);
     }
   }
 });

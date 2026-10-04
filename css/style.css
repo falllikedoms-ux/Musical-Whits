@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #12101f;
   --bg2: #1c1930;
   --card: #241f3d;
@@ -239,4 +240,16 @@ input[type=file] { color: var(--dim); font-size: .85em; max-width: 100%; }
   body { font-size: 16px; }
   .round-label { order: 3; flex-basis: 100%; }
   .wager { grid-template-columns: 1fr 100px; }
+}
+
+/* ---------- pop-ups ---------- */
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+  background: rgba(8, 6, 18, .7);
+}
+.dialog { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; max-width: 420px; width: 100%; }
+.dialog p { margin: 0; font-size: 1.1em; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60;
+  background: var(--wrong); color: #fff; padding: .7em 1.2em; border-radius: 12px; max-width: calc(100% - 32px);
 }

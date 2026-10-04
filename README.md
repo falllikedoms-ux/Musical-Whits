@@ -10,6 +10,8 @@ A musical guessing game show for 2 to 4 teams. One host runs it on a laptop or T
 https://falllikedoms-ux.github.io/Musical-Whits/
 GitHub Pages is free for public repositories. For a private repository it needs a paid GitHub plan.
 
+**On a phone or tablet:** downloaded files can't run there, so use an online copy: GitHub Pages above, or the hosted link from the project chat. Teams buzz by tapping their names.
+
 ## Hosting a game
 
 1. Type your team names and press **Start the show**.
