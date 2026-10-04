@@ -4,10 +4,11 @@ A musical guessing game show for 2 to 4 teams. One host runs it on a laptop or T
 
 ## Play it
 
-**Online (easiest):** once GitHub Pages is turned on (Settings → Pages → "Deploy from a branch" → `main` and `/ (root)` → Save), the game lives at
-https://falllikedoms-ux.github.io/Musical-Whits/
+**On your own computer:** download the code (green **Code** button → **Download ZIP**), then **extract** the ZIP (on Windows: right-click it → **Extract All**). Open the extracted folder and double-click `index.html`. Use Chrome, Edge, Firefox or Safari on a computer. Opening `index.html` from inside the ZIP, or on a phone, won't work.
 
-**On your own computer:** download the code (green **Code** button → **Download ZIP**), unzip it, and double-click `index.html`. It opens in your browser. No install needed.
+**Online:** turn on GitHub Pages (Settings → Pages → "Deploy from a branch" → `main` and `/ (root)` → Save) and the game lives at
+https://falllikedoms-ux.github.io/Musical-Whits/
+GitHub Pages is free for public repositories. For a private repository it needs a paid GitHub plan.
 
 ## Hosting a game
 

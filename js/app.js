@@ -17,7 +17,7 @@ const app = document.getElementById('app');
 // ---------- helpers ----------
 
 function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function fmtTime(s) {
@@ -580,7 +580,7 @@ function audioPicker(path, src) {
 }
 
 function field(label, path, value, type = 'text', extra = '') {
-  return `<label class="field"><span>${label}</span><input type="${type}" value="${esc(value ?? '')}" data-path="${path}" ${type === 'number' ? 'step="0.1" min="0"' : ''} ${extra}></label>`;
+  return `<label class="field"><span>${label}</span><input type="${type}" value="${esc(value)}" data-path="${path}" ${type === 'number' ? 'step="0.1" min="0"' : ''} ${extra}></label>`;
 }
 
 function editorItem(rid, it, idx) {
