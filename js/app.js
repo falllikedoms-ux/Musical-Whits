@@ -610,13 +610,16 @@ function toggleTriviaTimer() {
 
 function audioPicker(path, src) {
   src = src || { kind: 'tune', tune: 'twinkle' };
-  const kinds = [['tune', 'Built-in tune'], ['file', 'Audio file from my computer'], ['url', 'Web link to an audio file']];
+  const kinds = [['tune', 'Built-in tune'], ['file', 'Audio file from this device'], ['url', 'Web link to an audio file']];
   let detail = '';
   if (src.kind === 'tune') {
     detail = `<select data-path="${path}.tune">${Object.entries(TUNES).map(([id, t]) => `<option value="${id}" ${src.tune === id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`;
   } else if (src.kind === 'file') {
-    detail = `<span class="file-name">${src.fileName ? '🎵 ' + esc(src.fileName) : 'No file yet'}</span>
-      <input type="file" accept="audio/*" data-file-path="${path}">`;
+    detail = `<span class="file-name">${src.fileName ? '🎵 ' + esc(src.fileName) : 'No file chosen yet'}</span>
+      <label class="btn btn-secondary file-btn">${src.fileName ? 'Choose a different file' : 'Choose audio file'}
+        <input class="file-input" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac" data-file-path="${path}">
+      </label>
+      <span class="hint">If no file picker opens, open this page in your phone's browser (Chrome or Safari) instead of inside another app, or use a web link.</span>`;
   } else {
     detail = `<input type="url" placeholder="https://example.com/song.mp3" value="${esc(src.url || '')}" data-path="${path}.url">`;
   }
@@ -692,7 +695,7 @@ function renderEditor() {
       <p class="dim">Save your question pack to a file, or load one. (Audio files are not included; built-in tunes and web links are.)</p>
       <div class="row">
         <button class="btn btn-secondary" data-action="export">Download pack</button>
-        <label class="btn btn-secondary">Load pack<input type="file" accept=".json,application/json" data-import hidden></label>
+        <label class="btn btn-secondary file-btn">Load pack<input class="file-input" type="file" accept=".json,application/json" data-import></label>
         <button class="btn btn-ghost danger" data-action="reset-pack">Reset to starter pack</button>
       </div>
     </section>
