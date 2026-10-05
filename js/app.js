@@ -265,8 +265,22 @@ function updateProgress(pos, dur) {
 }
 
 function updatePlayButton() {
+  const playing = !!(clip && clip.playing);
   const btn = document.getElementById('play-btn');
-  if (btn) btn.innerHTML = clip && clip.playing ? '⏸ Pause' : '▶ Play';
+  if (btn) btn.innerHTML = playing ? '⏸ Pause' : '▶ Play';
+  const deck = document.getElementById('turntable');
+  if (deck) deck.classList.toggle('playing', playing);
+}
+
+// The record player drawn next to the play controls; it spins while a clip plays.
+function turntable() {
+  const r = round();
+  const label = r.id === 'final' ? 'Final' : 'Side ' + 'ABCDE'[game.r];
+  return `
+  <div id="turntable" class="turntable" aria-hidden="true">
+    <div class="platter"><div class="record"><div class="record-label"><span>${label}</span></div></div></div>
+    <div class="tonearm"></div>
+  </div>`;
 }
 
 // ---------- rendering ----------
@@ -289,9 +303,11 @@ function renderHome() {
   return `
   <main class="home">
     <header class="hero">
-      <div class="logo">♪</div>
+      <div class="marquee-lights" aria-hidden="true"></div>
+      <div class="logo" aria-hidden="true"></div>
       <h1>Musical Whits</h1>
       <p class="tagline">The show where your ears do the thinking.</p>
+      <div class="hero-stripes" aria-hidden="true"><span></span><span></span><span></span></div>
     </header>
     <section class="card">
       <h2>Teams</h2>
@@ -368,7 +384,7 @@ function renderGame() {
   return `
   <div class="game">
     <header class="topbar">
-      <div class="brand"><span class="logo small">♪</span> Musical Whits</div>
+      <div class="brand"><span class="logo small" aria-hidden="true"></span> Musical Whits</div>
       <div class="round-label">${roundNum ? `<span class="dim">${roundNum}</span> ` : ''}${esc(title)}</div>
       <div class="top-actions">
         ${game.phase !== 'end' ? '<button class="btn btn-ghost" data-action="skip-round">Skip round</button>' : ''}
@@ -399,6 +415,7 @@ function renderIntro(r) {
 function renderPlayer() {
   return `
   <div class="player">
+    ${turntable()}
     <button id="play-btn" class="btn btn-primary btn-big" data-action="toggle-play">▶ Play</button>
     <button class="btn btn-secondary" data-action="restart">⟲ From the top</button>
     <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
@@ -409,6 +426,7 @@ function renderPlayer() {
 function renderSprintPlayer(r, st) {
   return `
   <div class="player sprint">
+    ${turntable()}
     ${r.stages.map((s, k) => `
       <button class="btn ${st.stage > k ? 'btn-secondary' : 'btn-primary'} btn-big" data-action="stage" data-stage="${k}" ${k > st.stage ? 'disabled' : ''}>
         ▶ ${s} sec <span class="stage-pts">${r.stagePoints[k]} pts</span>
@@ -448,7 +466,7 @@ function renderBuzzItem(r) {
 
   return `
   <section class="panel item">
-    <div class="eyebrow">Track ${game.i + 1} of ${n}</div>
+    <div class="eyebrow"><span class="selection">${'ABCDE'[game.r]}${game.i + 1}</span> Track ${game.i + 1} of ${n}</div>
     ${clue}
     ${r.type === 'sprint' ? renderSprintPlayer(r, st) : renderPlayer()}
     ${buzzArea}
@@ -658,7 +676,7 @@ function renderEditor() {
   return `
   <main class="editor">
     <header class="topbar">
-      <div class="brand"><span class="logo small">♪</span> Edit questions and music</div>
+      <div class="brand"><span class="logo small" aria-hidden="true"></span> Edit questions and music</div>
       <div class="top-actions"><button class="btn btn-primary" data-action="home">Done</button></div>
     </header>
     <p class="hint">Changes save automatically in this browser. Audio files you add stay on this computer and are never uploaded. Recommended counts from the rules: 10, 8, 8, 10, 6 and 1. Leave a round empty to skip it.</p>
