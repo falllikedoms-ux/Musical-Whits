@@ -55,7 +55,17 @@ To use real songs, open **Edit questions and music** from the menu. For each tra
 - **Web link to an audio file** (a direct link ending in .mp3 or similar).
 - **Built-in tune**.
 
-You can also set where the clip starts, and for Lyric Gap where the music stops. **Download pack** saves your questions to a file as a backup.
+You can also set where the clip starts, and for Lyric Gap where the music stops.
+
+### Your whole music library
+
+Under **My music library** in the editor, **+ Add songs** takes as many songs as you pick at once (on a phone, press and hold a song in the picker to select several). On a computer, **Add a whole folder** takes a folder in one go. Titles and artists come from each MP3's tags, or from the file name (`Artist - Title.mp3`), and you can fix any that look wrong. The songs are copied into the browser on that device and are never uploaded.
+
+On the menu, tick **Pick songs at random from my music library** and each new game draws Name That Tune, Intro Sprint, Mashup Mayhem and the Final from the library at random, with no song played twice in a game. Lyric Gap and Trivia still come from your questions, since they need words typed in.
+
+### Random clip start
+
+Tick **Start each clip at a random point in the song** on the menu to start clips somewhere random instead of at the set start. It applies to Name That Tune, Mashup Mayhem and the Final; Intro Sprint and Lyric Gap keep their set start. **Download pack** saves your questions to a file as a backup.
 
 Please don't commit copyrighted songs into this repository. Load them in the editor instead.
 
@@ -67,4 +77,5 @@ Plain HTML, CSS and JavaScript with no build step. `index.html` loads everything
 - `js/tunes.js`: the built-in melodies and the synthesizer
 - `js/audio.js`: clip playback (start, length, layering, reverse, slow)
 - `js/storage.js`: saving in the browser
+- `js/library.js`: the music library and random game building
 - `js/app.js`: the screens and game flow
