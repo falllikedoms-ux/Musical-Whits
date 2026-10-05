@@ -9,8 +9,19 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div id="app"></div>
-  <noscript>Musical Whits needs JavaScript turned on.</noscript>
+  <div id="app">
+    <!-- The game replaces this message as soon as it starts. -->
+    <main class="home load-help" style="max-width:640px;margin:40px auto;padding:0 16px;font-family:system-ui,sans-serif;color:#f4f1ff;background:#12101f">
+      <h1>Musical Whits</h1>
+      <p>Loading the game... If this message stays on screen, the game could not start. Try these:</p>
+      <ol>
+        <li>Make sure you <b>extracted</b> the whole ZIP first (right-click it and choose "Extract All" on Windows), then open <b>index.html</b> from the extracted folder, not from inside the ZIP.</li>
+        <li>Keep the <b>css</b> and <b>js</b> folders next to index.html.</li>
+        <li>Open it in an up-to-date <b>Chrome</b>, <b>Edge</b>, <b>Firefox</b> or <b>Safari</b> on a computer. Phone file viewers can't run the game.</li>
+      </ol>
+    </main>
+  </div>
+  <noscript><p style="text-align:center;color:#f4f1ff">Musical Whits needs JavaScript turned on.</p></noscript>
   <script src="js/tunes.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/audio.js"></script>

@@ -110,7 +110,8 @@ function parseTune(tune) {
 // Seconds from the start of a tune to the end of its Nth phrase (1-based).
 function tunePhraseEnd(tuneId, phrase) {
   const p = parseTune(TUNES[tuneId]);
-  return p.phraseEnds[phrase - 1] ?? p.length;
+  const end = p.phraseEnds[phrase - 1];
+  return end === undefined ? p.length : end;
 }
 
 const tuneCache = {};
