@@ -286,9 +286,11 @@ function turntable() {
 // ---------- rendering ----------
 
 function render() {
-  if (screen === 'editor') { app.innerHTML = renderEditor(); return; }
-  if (screen === 'game' && game) { app.innerHTML = renderGame(); afterGameRender(); return; }
-  app.innerHTML = renderHome();
+  if (screen === 'editor') app.innerHTML = renderEditor();
+  else if (screen === 'player' && window.Online) app.innerHTML = Online.renderPlayer();
+  else if (screen === 'game' && game) { app.innerHTML = renderGame(); afterGameRender(); }
+  else app.innerHTML = renderHome();
+  if (window.Online) Online.afterRender();
 }
 
 function renderHome() {
@@ -320,6 +322,7 @@ function renderHome() {
         ${resume}
       </div>
     </section>
+    ${window.Online ? Online.homeCard() : ''}
     <section class="card">
       <h2>Songs and questions</h2>
       <p>The game comes with placeholder tunes (public-domain melodies) so you can try it right away. Swap in your own songs from your computer or a web link.</p>
@@ -386,6 +389,7 @@ function renderGame() {
     <header class="topbar">
       <div class="brand"><span class="logo small" aria-hidden="true"></span> Musical Whits</div>
       <div class="round-label">${roundNum ? `<span class="dim">${roundNum}</span> ` : ''}${esc(title)}</div>
+      <span id="online-count" class="online-count"></span>
       <div class="top-actions">
         ${game.phase !== 'end' ? '<button class="btn btn-ghost" data-action="skip-round">Skip round</button>' : ''}
         <button class="btn btn-ghost" data-action="home">Menu</button>
@@ -881,6 +885,10 @@ app.addEventListener('change', async (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('input, select, textarea')) return;
+  if (screen === 'player' && window.Online) {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); Online.press(); }
+    return;
+  }
   if (screen !== 'game' || !game || game.phase !== 'item') return;
   const k = e.key.toUpperCase();
   const team = TEAM_KEYS.indexOf(k);

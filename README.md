@@ -23,6 +23,17 @@ GitHub Pages is free for public repositories. For a private repository it needs 
 
 The game saves itself in the browser, so refreshing the page or closing the tab doesn't lose the scores. Choose **Resume game in progress** on the menu.
 
+## Playing with friends far away
+
+In the hosted copy of the game on claude.ai, every player can use their own phone (or computer) as a buzzer:
+
+1. Share the game with each player from the page's **Share** menu. They need to be signed in to claude.ai.
+2. Each player opens the link and taps **Join as a player** (players who can't edit the game land there straight away), then picks their team.
+3. The host runs the show as usual. When a clip plays, players tap the big **BUZZ** button, or press the space bar on a computer. The first buzz to arrive wins, and the host's screen shows which team buzzed.
+4. Start a video call and share your sound so everyone hears the music.
+
+This needs the hosted copy. A downloaded `index.html` plays as a single-screen game.
+
 ## Rounds
 
 | Round | How it plays |

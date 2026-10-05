@@ -416,3 +416,32 @@ input[type=text], input[type=url], input[type=number], select {
 @media (prefers-reduced-motion: reduce) {
   .logo, .record, .marquee-lights, .confetti span, .team.buzzed .team-buzz { animation: none !important; }
 }
+
+/* ---------- online play ---------- */
+.online-count { font-family: var(--mono); font-size: .85em; color: var(--mustard); }
+.online-count:empty { display: none; }
+.team-pick { display: grid; gap: 12px; max-width: 420px; margin: 1em auto 0; }
+.team-pick .pick { background: var(--team); color: var(--ink); font-size: 1.2em; min-height: 60px; }
+.player-team { font-size: clamp(1.8rem, 8vw, 2.6rem); color: var(--team); text-shadow: 2px 2px 0 rgba(0, 0, 0, .4); }
+/* The buzzer is a big jukebox push button in the team's colour. */
+.big-buzzer {
+  display: grid; place-items: center; margin: 18px auto 10px;
+  width: min(72vw, 260px); aspect-ratio: 1; border-radius: 50%; cursor: pointer;
+  border: 10px solid #c9b89c; color: var(--ink);
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .45), transparent 40%), var(--team);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, .5), inset 0 -10px 0 rgba(0, 0, 0, .2);
+  font-family: var(--display); font-size: clamp(2.4rem, 12vw, 3.4rem);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none;
+  transition: transform .08s, box-shadow .08s, filter .2s;
+}
+.big-buzzer:disabled { cursor: default; filter: grayscale(.85) brightness(.6); }
+.big-buzzer.ready { animation: ready-pulse 1s ease-in-out infinite alternate; }
+.big-buzzer.ready:active { transform: translateY(8px); box-shadow: 0 2px 0 rgba(0, 0, 0, .5), inset 0 -4px 0 rgba(0, 0, 0, .2); }
+.big-buzzer.mine { filter: none; box-shadow: 0 0 0 6px var(--team), 0 0 50px var(--team); }
+@keyframes ready-pulse { to { box-shadow: 0 10px 0 rgba(0, 0, 0, .5), 0 0 40px var(--team), inset 0 -10px 0 rgba(0, 0, 0, .2); } }
+.buzz-state { font-family: var(--display); font-size: 1.4em; margin: .4em 0; }
+.standings.mini { max-width: 360px; font-size: .9em; }
+.standings.mini li { padding: 6px 12px; }
+.standings.mini .team-score { font-size: 1.2em; }
+.standings.mini li.me { outline: 3px solid var(--team); }
+@media (prefers-reduced-motion: reduce) { .big-buzzer.ready { animation: none; } }
