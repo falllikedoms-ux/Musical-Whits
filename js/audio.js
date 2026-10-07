@@ -31,6 +31,9 @@ async function loadSource(src) {
       result = { url: src.url };
     }
   }
+  // Whole songs take a lot of memory once decoded, so keep only the last few.
+  const keys = Object.keys(bufferCache);
+  if (keys.length >= 4) delete bufferCache[keys[0]];
   bufferCache[key] = result;
   return result;
 }
@@ -45,7 +48,7 @@ function reverseBuffer(buffer) {
 }
 
 class Clip {
-  // opts: { start (s), length (s or null), rate (1 = normal), reverse (bool) }
+  // opts: { start (s, or 'random'), length (s or null), rate (1 = normal), reverse (bool) }
   constructor(sources, opts = {}) {
     this.sources = sources;
     this.start = opts.start || 0;
@@ -64,11 +67,20 @@ class Clip {
     if (!this.loaded) {
       this.loaded = Promise.all(this.sources.map(loadSource)).then((tracks) => {
         this.tracks = tracks.map((t) => (t.buffer && this.reverse ? { buffer: reverseBuffer(t.buffer) } : t));
+        if (this.start === 'random') this.start = this.randomStart();
         const natural = Math.max(...this.tracks.map((t) => (t.buffer ? (t.buffer.duration - this.start) / this.rate : 30)));
         this.duration = Math.max(0.1, this.length ? Math.min(this.length, natural) : natural);
       });
     }
     return this.loaded;
+  }
+
+  // Somewhere in the song that still leaves room for the whole clip.
+  randomStart() {
+    const lengths = this.tracks.filter((t) => t.buffer).map((t) => t.buffer.duration);
+    if (!lengths.length) return 0;
+    const room = Math.min(...lengths) - (this.length || 15) * this.rate;
+    return room > 0 ? +(Math.random() * room).toFixed(1) : 0;
   }
 
   async play() {

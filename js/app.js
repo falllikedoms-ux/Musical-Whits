@@ -3,6 +3,9 @@
 const TEAM_KEYS = ['Q', 'P', 'Z', 'M'];
 const DEFAULT_TEAM_NAMES = ['The Treble Makers', 'Bass Invaders', 'The Rolling Scones', 'Notes Alone'];
 const MASHUP_MODES = { layer: 'Two songs layered', reverse: 'Played backwards', slow: 'Slowed down' };
+// Rounds where "random clip start" applies. Intro Sprint is about the intro, and
+// Lyric Gap has to stop right before its line, so those keep their set start.
+const RANDOM_START_ROUNDS = ['r1', 'r5', 'final'];
 
 let pack = loadJSON(PACK_KEY) || demoPack();
 let game = loadJSON(GAME_KEY);
@@ -10,6 +13,7 @@ let screen = 'home';
 let clip = null;
 let triviaTimer = null;
 let editorRound = 'r1';
+let libraryOpen = false;
 let setup = { count: 3, names: DEFAULT_TEAM_NAMES.slice(), noNegative: false };
 
 const app = document.getElementById('app');
@@ -32,7 +36,9 @@ function savePack() { saveJSON(PACK_KEY, pack); }
 function saveGame() { saveJSON(GAME_KEY, game); }
 
 function round() { return ROUNDS[game.r]; }
-function items() { return pack[round().id] || []; }
+// A game drawn from the music library carries its own tracks; otherwise they come from the pack.
+function roundItems(id) { return (game && game.items && game.items[id]) || pack[id] || []; }
+function items() { return roundItems(round().id); }
 function item() { return items()[game.i]; }
 
 function stopClip() {
@@ -46,8 +52,9 @@ function stopTriviaTimer() {
 }
 
 // Builds the clip for a question, following each round's rules.
-function makeClip(roundId, it, stageSeconds) {
-  const start = Number(it.start) || 0;
+// startAt overrides the track's own start (a number, or 'random').
+function makeClip(roundId, it, stageSeconds, startAt) {
+  const start = startAt !== undefined ? startAt : Number(it.start) || 0;
   if (roundId === 'r2') return new Clip([it.audio], { start, length: stageSeconds });
   if (roundId === 'r3') {
     const stop = Number(it.stopAt);
@@ -120,6 +127,8 @@ function newGame() {
   game = {
     teams: setup.names.slice(0, setup.count).map((name, i) => ({ name: name.trim() || 'Team ' + (i + 1), score: 0 })),
     noNegative: setup.noNegative,
+    randomStart: settings.randomStart,
+    items: settings.useLibrary && library.length ? libraryRounds() : null,
     r: 0, i: 0, phase: 'intro',
     roundStart: [],
     item: null,
@@ -132,7 +141,7 @@ function newGame() {
 }
 
 function skipEmptyRounds() {
-  while (game.r < ROUNDS.length && !(pack[ROUNDS[game.r].id] || []).length) game.r++;
+  while (game.r < ROUNDS.length && !roundItems(ROUNDS[game.r].id).length) game.r++;
   if (game.r >= ROUNDS.length) game.phase = 'end';
 }
 
@@ -231,16 +240,20 @@ function optionsFor(r, it, st) {
 async function playClip(stageSeconds) {
   const r = round();
   const it = item();
+  const st = game.item;
+  const random = game.randomStart && RANDOM_START_ROUNDS.includes(r.id);
   try {
     if (r.type === 'sprint') {
       stopClip();
       clip = makeClip(r.id, it, stageSeconds);
     } else if (!clip) {
-      clip = makeClip(r.id, it);
+      // Keep the same random spot if the clip is rebuilt (after a refresh, say).
+      clip = makeClip(r.id, it, undefined, st.clipStart != null ? st.clipStart : random ? 'random' : undefined);
     }
     clip.onupdate = updateProgress;
     clip.onend = () => { updatePlayButton(); };
     await clip.play();
+    if (random && st.clipStart == null) { st.clipStart = clip.start; saveGame(); }
     updatePlayButton();
   } catch (e) {
     clip = null;
@@ -317,6 +330,10 @@ function renderHome() {
       <div class="team-inputs">${teamInputs}</div>
       <p class="hint">Each team buzzes with its key on the keyboard (shown on the left), or by tapping its name on screen.</p>
       <label class="check"><input type="checkbox" data-action="no-negative" ${setup.noNegative ? 'checked' : ''}> Kids' edition: no negative points</label>
+      <label class="check"><input type="checkbox" data-setting="randomStart" ${settings.randomStart ? 'checked' : ''}> Start each clip at a random point in the song</label>
+      <p class="hint check-hint">For Name That Tune, Mashup Mayhem and the Final. Intro Sprint and Lyric Gap keep their set start.</p>
+      <label class="check"><input type="checkbox" data-setting="useLibrary" ${settings.useLibrary && library.length ? 'checked' : ''} ${library.length ? '' : 'disabled'}> Pick songs at random from my music library${library.length ? ` (${library.length} song${library.length === 1 ? '' : 's'})` : ''}</label>
+      ${library.length ? '' : '<p class="hint check-hint">Add your songs under <b>Edit questions and music</b> first.</p>'}
       <div class="row">
         <button class="btn btn-primary" data-action="new-game">Start the show</button>
         ${resume}
@@ -325,7 +342,7 @@ function renderHome() {
     ${window.Online ? Online.homeCard() : ''}
     <section class="card">
       <h2>Songs and questions</h2>
-      <p>The game comes with placeholder tunes (public-domain melodies) so you can try it right away. Swap in your own songs from your computer or a web link.</p>
+      <p>The game comes with placeholder tunes (public-domain melodies) so you can try it right away. Add your whole music library in one go, or set up each track yourself.</p>
       <button class="btn btn-secondary" data-action="open-editor">Edit questions and music</button>
     </section>
     <details class="card howto">
@@ -402,7 +419,7 @@ function renderGame() {
 
 function renderIntro(r) {
   const n = items().length;
-  const line = game.r === 0 || ROUNDS.slice(0, game.r).every((x) => !(pack[x.id] || []).length)
+  const line = game.r === 0 || ROUNDS.slice(0, game.r).every((x) => !roundItems(x.id).length)
     ? HOST_LINES.opening : r.type === 'final' ? HOST_LINES.final : null;
   const noun = r.type === 'trivia' ? 'questions' : r.type === 'final' ? 'track' : 'tracks';
   return `
@@ -551,7 +568,7 @@ function standingsTable(showDelta) {
 
 function renderRoundEnd(r) {
   let nextIdx = game.r + 1;
-  while (nextIdx < ROUNDS.length && !(pack[ROUNDS[nextIdx].id] || []).length) nextIdx++;
+  while (nextIdx < ROUNDS.length && !roundItems(ROUNDS[nextIdx].id).length) nextIdx++;
   const next = ROUNDS[nextIdx];
   return `
   <section class="panel intro">
@@ -687,6 +704,7 @@ function renderEditor() {
       <div class="top-actions"><button class="btn btn-primary" data-action="home">Done</button></div>
     </header>
     <p class="hint">Changes save automatically in this browser. Audio files you add stay on this computer and are never uploaded. Recommended counts from the rules: 10, 8, 8, 10, 6 and 1. Leave a round empty to skip it.</p>
+    ${renderLibrary()}
     <nav class="tabs">${tabs}</nav>
     <section class="card">
       <h2>${esc(r.name)}</h2>
@@ -704,6 +722,31 @@ function renderEditor() {
       </div>
     </section>
   </main>`;
+}
+
+function renderLibrary() {
+  const n = library.length;
+  const rows = library.map((s, i) => `
+    <div class="lib-row">
+      <input type="text" value="${esc(s.title)}" data-lib="${i}" data-lib-field="title" aria-label="Title">
+      <input type="text" value="${esc(s.artist)}" data-lib="${i}" data-lib-field="artist" placeholder="Artist" aria-label="Artist">
+      <button class="btn btn-ghost btn-small" data-action="lib-preview" data-idx="${i}" aria-label="Play a bit of ${esc(s.title)}">▶</button>
+      <button class="btn btn-ghost btn-small danger" data-action="lib-remove" data-idx="${i}" aria-label="Remove ${esc(s.title)}">✕</button>
+    </div>`).join('');
+  const accept = 'audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac';
+  return `
+    <section class="card library">
+      <h2>My music library <span class="dim">(${n} song${n === 1 ? '' : 's'})</span></h2>
+      <p>Add as many songs as you like at once. Then tick <b>Pick songs at random from my music library</b> on the menu, and every new game draws Name That Tune, Intro Sprint, Mashup Mayhem and the Final from here, with no song played twice in a game. Lyric Gap and Trivia still use the questions below.</p>
+      <div class="row">
+        <label class="btn btn-primary file-btn">+ Add songs<input class="file-input" type="file" multiple accept="${accept}" data-library-add></label>
+        <label class="btn btn-secondary file-btn desktop-only">Add a whole folder<input class="file-input" type="file" webkitdirectory data-library-add></label>
+        ${n ? '<button class="btn btn-ghost danger" data-action="clear-library">Remove all</button>' : ''}
+      </div>
+      <p class="hint">On a phone, press and hold a song in the picker to select several at once. Songs are copied into this browser on this device, so they use some of its storage. They are never uploaded.</p>
+      ${n ? `<details class="lib-list" ${libraryOpen ? 'open' : ''}><summary>Check song names (${n})</summary>
+        <p class="hint">Names come from each file's tags or its file name. Fix any that look wrong; they're the answers on screen.</p>${rows}</details>` : ''}
+    </section>`;
 }
 
 function getPath(path) {
@@ -728,6 +771,17 @@ function newEditorItem(rid) {
 }
 
 let previewClip = null;
+async function previewLibrary(idx) {
+  if (previewClip && previewClip.playing) { previewClip.stop(); previewClip = null; return; }
+  const s = library[idx];
+  try {
+    previewClip = new Clip([{ kind: 'file', fileId: s.fileId, fileName: s.fileName }], { start: 'random', length: 10 });
+    await previewClip.play();
+  } catch (e) {
+    notify('Could not play this song: ' + e.message);
+  }
+}
+
 async function preview(idx) {
   if (previewClip && previewClip.playing) { previewClip.stop(); previewClip = null; return; }
   try {
@@ -822,6 +876,15 @@ app.addEventListener('click', (e) => {
       break;
     }
     case 'preview': preview(+el.dataset.idx); break;
+    case 'lib-preview': previewLibrary(+el.dataset.idx); break;
+    case 'lib-remove': {
+      const s = library[+el.dataset.idx];
+      ask(`Remove "${s.title}" from your library?`, 'Remove', () => { removeFromLibrary(+el.dataset.idx); render(); });
+      break;
+    }
+    case 'clear-library':
+      ask(`Remove all ${library.length} songs from your library? The files on your device itself are not touched.`, 'Remove all', () => { clearLibrary(); render(); });
+      break;
     case 'export': {
       const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
       const link = document.createElement('a');
@@ -844,6 +907,26 @@ app.addEventListener('input', (e) => {
 app.addEventListener('change', async (e) => {
   const t = e.target;
   if (t.dataset.action === 'no-negative') { setup.noNegative = t.checked; return; }
+  if (t.dataset.setting) { settings[t.dataset.setting] = t.checked; saveSettings(); return; }
+  if (t.dataset.libField) { library[+t.dataset.lib][t.dataset.libField] = t.value.trim(); saveLibrary(); return; }
+  if (t.dataset.libraryAdd !== undefined && t.files.length) {
+    const progress = document.createElement('div');
+    progress.className = 'toast';
+    progress.setAttribute('role', 'status');
+    document.body.appendChild(progress);
+    try {
+      const res = await addToLibrary(t.files, (k, n) => { progress.textContent = `Adding song ${k} of ${n}...`; });
+      progress.remove();
+      const extra = [res.skipped ? `${res.skipped} already in your library` : '', res.ignored ? `${res.ignored} not audio` : ''].filter(Boolean).join(', ');
+      notify(`Added ${res.added} song${res.added === 1 ? '' : 's'}.${extra ? ' Skipped ' + extra + '.' : ''}`);
+    } catch (err) {
+      progress.remove();
+      notify(err.message);
+    }
+    libraryOpen = libraryOpen || library.length <= 30;
+    render();
+    return;
+  }
   if (t.dataset.path) {
     const val = t.type === 'number' ? (t.value === '' ? '' : +t.value) : t.value;
     setPath(t.dataset.path, val);
@@ -882,6 +965,9 @@ app.addEventListener('change', async (e) => {
     }
   }
 });
+
+// Remember whether the song list is open across re-renders.
+app.addEventListener('toggle', (e) => { if (e.target.classList.contains('lib-list')) libraryOpen = e.target.open; }, true);
 
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('input, select, textarea')) return;
