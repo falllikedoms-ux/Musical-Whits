@@ -59,7 +59,12 @@ You can also set where the clip starts, and for Lyric Gap where the music stops.
 
 ### Your whole music library
 
-Under **My music library** in the editor, **+ Add songs** takes as many songs as you pick at once (on a phone, press and hold a song in the picker to select several). On a computer, **Add a whole folder** takes a folder in one go. Titles and artists come from each MP3's tags, or from the file name (`Artist - Title.mp3`), and you can fix any that look wrong. The songs are copied into the browser on that device and are never uploaded.
+Under **My music library** in the editor:
+
+- **Add a whole folder** takes every song in the folder you pick, including all the album folders inside it. Other files (cover pictures and so on) are skipped. This works in Chrome on a computer; on a phone it depends on the phone's file picker.
+- **+ Add songs** takes as many songs as you select. On a phone, open an album, press and hold one song, then choose **Select all** from the menu.
+
+Titles, artists and albums come from each MP3's tags, or from the file and folder names (`Artist - Title.mp3`). **Search and check songs** finds songs by title, artist or album, lets you fix any names that look wrong, and can remove everything that matches a search. The songs are copied into the browser on that device and are never uploaded.
 
 On the menu, tick **Pick songs at random from my music library** and each new game draws Name That Tune, Intro Sprint, Mashup Mayhem and the Final from the library at random, with no song played twice in a game. Lyric Gap and Trivia still come from your questions, since they need words typed in.
 

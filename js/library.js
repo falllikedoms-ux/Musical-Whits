@@ -34,7 +34,7 @@ async function readTags(file) {
     if (head[5] & 0x40) p = ver === 4 ? syncsafe(buf, 0) : ((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]) + 4;
     const idLen = ver === 2 ? 3 : 4;
     const headLen = ver === 2 ? 6 : 10;
-    const wanted = ver === 2 ? { TT2: 'title', TP1: 'artist' } : { TIT2: 'title', TPE1: 'artist' };
+    const wanted = ver === 2 ? { TT2: 'title', TP1: 'artist', TAL: 'album' } : { TIT2: 'title', TPE1: 'artist', TALB: 'album' };
     const out = {};
     while (p + headLen <= buf.length) {
       const id = String.fromCharCode(...buf.subarray(p, p + idLen));
@@ -42,7 +42,7 @@ async function readTags(file) {
       const len = ver === 2 ? (buf[p + 3] << 16) | (buf[p + 4] << 8) | buf[p + 5]
         : ver === 4 ? syncsafe(buf, p + 4) : ((buf[p + 4] << 24) | (buf[p + 5] << 16) | (buf[p + 6] << 8) | buf[p + 7]);
       if (wanted[id]) out[wanted[id]] = tagText(buf.subarray(p + headLen, p + headLen + len));
-      if (out.title && out.artist) break;
+      if (out.title && out.artist && out.album) break;
       p += headLen + len;
     }
     return out;
@@ -59,7 +59,33 @@ function tagText(body) {
   return new TextDecoder(label).decode(data).split('\0').find((s) => s.trim()) || '';
 }
 
+// The folder a song came from ("Music/Abbey Road/01 Come Together.mp3" -> "Abbey Road"),
+// when it was added as part of a folder.
+function folderName(file) {
+  const parts = (file.webkitRelativePath || '').split('/');
+  return parts.length >= 3 ? parts[parts.length - 2] : '';
+}
+
+// Library songs whose title, artist or album contains every word searched for.
+function searchLibrary(query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const out = [];
+  library.forEach((s, i) => {
+    const text = [s.title, s.artist, s.album].join(' ').toLowerCase();
+    if (words.every((w) => text.includes(w))) out.push(i);
+  });
+  return out;
+}
+
+function removeManyFromLibrary(indexes) {
+  const drop = new Set(indexes);
+  library.forEach((s, i) => { if (drop.has(i)) FileStore.remove(s.fileId).catch(() => {}); });
+  library = library.filter((s, i) => !drop.has(i));
+  saveLibrary();
+}
+
 // Adds files to the library one at a time, reporting progress as it goes.
+// A whole folder works too: songs in its album folders come along, other files are skipped.
 async function addToLibrary(files, onProgress) {
   const known = new Set(library.map((s) => s.fileName + '|' + s.size));
   const audio = [...files].filter((f) => /^audio\//.test(f.type) || /\.(mp3|m4a|aac|wav|ogg|oga|flac|opus|webm)$/i.test(f.name));
@@ -78,7 +104,7 @@ async function addToLibrary(files, onProgress) {
       saveLibrary();
       throw new Error(`Only ${added} songs fit. This device is out of space for more.`);
     }
-    library.push({ fileId, fileName: file.name, size: file.size, title: tags.title || guess.title, artist: tags.artist || guess.artist });
+    library.push({ fileId, fileName: file.name, size: file.size, title: tags.title || guess.title, artist: tags.artist || guess.artist, album: tags.album || folderName(file) });
     known.add(file.name + '|' + file.size);
     added++;
     if (added % 10 === 0) saveLibrary();
