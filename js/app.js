@@ -14,6 +14,8 @@ let clip = null;
 let triviaTimer = null;
 let editorRound = 'r1';
 let libraryOpen = false;
+let librarySearch = '';
+const LIBRARY_ROWS_SHOWN = 60;
 let setup = { count: 3, names: DEFAULT_TEAM_NAMES.slice(), noNegative: false };
 
 const app = document.getElementById('app');
@@ -724,15 +726,32 @@ function renderEditor() {
   </main>`;
 }
 
-function renderLibrary() {
-  const n = library.length;
-  const rows = library.map((s, i) => `
+// The song list under the search box. Big libraries only show the first matches,
+// so the page stays quick on a phone.
+function renderLibraryRows() {
+  const matches = searchLibrary(librarySearch);
+  const rows = matches.slice(0, LIBRARY_ROWS_SHOWN).map((i) => {
+    const s = library[i];
+    return `
     <div class="lib-row">
       <input type="text" value="${esc(s.title)}" data-lib="${i}" data-lib-field="title" aria-label="Title">
       <input type="text" value="${esc(s.artist)}" data-lib="${i}" data-lib-field="artist" placeholder="Artist" aria-label="Artist">
       <button class="btn btn-ghost btn-small" data-action="lib-preview" data-idx="${i}" aria-label="Play a bit of ${esc(s.title)}">▶</button>
       <button class="btn btn-ghost btn-small danger" data-action="lib-remove" data-idx="${i}" aria-label="Remove ${esc(s.title)}">✕</button>
-    </div>`).join('');
+      ${s.album ? `<span class="lib-album">💿 ${esc(s.album)}</span>` : ''}
+    </div>`;
+  }).join('');
+  const count = librarySearch.trim()
+    ? `${matches.length} match${matches.length === 1 ? '' : 'es'}`
+    : `${library.length} song${library.length === 1 ? '' : 's'}`;
+  const more = matches.length > LIBRARY_ROWS_SHOWN ? `<p class="hint">Showing the first ${LIBRARY_ROWS_SHOWN}. Search to find the rest.</p>` : '';
+  const removeMatches = librarySearch.trim() && matches.length
+    ? `<button class="btn btn-ghost btn-small danger" data-action="lib-remove-matches">Remove these ${matches.length}</button>` : '';
+  return `<div class="row lib-count"><span class="dim">${count}</span>${removeMatches}</div>${rows || '<p class="dim">No songs match.</p>'}${more}`;
+}
+
+function renderLibrary() {
+  const n = library.length;
   const accept = 'audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac';
   return `
     <section class="card library">
@@ -740,12 +759,14 @@ function renderLibrary() {
       <p>Add as many songs as you like at once. Then tick <b>Pick songs at random from my music library</b> on the menu, and every new game draws Name That Tune, Intro Sprint, Mashup Mayhem and the Final from here, with no song played twice in a game. Lyric Gap and Trivia still use the questions below.</p>
       <div class="row">
         <label class="btn btn-primary file-btn">+ Add songs<input class="file-input" type="file" multiple accept="${accept}" data-library-add></label>
-        <label class="btn btn-secondary file-btn desktop-only">Add a whole folder<input class="file-input" type="file" webkitdirectory data-library-add></label>
+        <label class="btn btn-secondary file-btn">Add a whole folder<input class="file-input" type="file" webkitdirectory multiple data-library-add></label>
         ${n ? '<button class="btn btn-ghost danger" data-action="clear-library">Remove all</button>' : ''}
       </div>
-      <p class="hint">On a phone, press and hold a song in the picker to select several at once. Songs are copied into this browser on this device, so they use some of its storage. They are never uploaded.</p>
-      ${n ? `<details class="lib-list" ${libraryOpen ? 'open' : ''}><summary>Check song names (${n})</summary>
-        <p class="hint">Names come from each file's tags or its file name. Fix any that look wrong; they're the answers on screen.</p>${rows}</details>` : ''}
+      <p class="hint"><b>Add a whole folder</b> takes every song in the folder you pick, including all the album folders inside it. If your phone shows a plain list of files instead of folders, use <b>+ Add songs</b>: open an album, press and hold one song, then pick <b>Select all</b> from the menu. Songs are copied into this browser on this device, so they use some of its storage. They are never uploaded.</p>
+      ${n ? `<details class="lib-list" ${libraryOpen ? 'open' : ''}><summary>Search and check songs (${n})</summary>
+        <input type="search" class="lib-search" placeholder="Search by song, artist or album" value="${esc(librarySearch)}" data-lib-search aria-label="Search your library">
+        <p class="hint">Names come from each file's tags or its file name. Fix any that look wrong; they're the answers on screen.</p>
+        <div id="lib-rows">${renderLibraryRows()}</div></details>` : ''}
     </section>`;
 }
 
@@ -882,6 +903,11 @@ app.addEventListener('click', (e) => {
       ask(`Remove "${s.title}" from your library?`, 'Remove', () => { removeFromLibrary(+el.dataset.idx); render(); });
       break;
     }
+    case 'lib-remove-matches': {
+      const matches = searchLibrary(librarySearch);
+      ask(`Remove the ${matches.length} songs matching "${librarySearch.trim()}" from your library?`, 'Remove', () => { removeManyFromLibrary(matches); librarySearch = ''; render(); });
+      break;
+    }
     case 'clear-library':
       ask(`Remove all ${library.length} songs from your library? The files on your device itself are not touched.`, 'Remove all', () => { clearLibrary(); render(); });
       break;
@@ -902,6 +928,10 @@ app.addEventListener('click', (e) => {
 app.addEventListener('input', (e) => {
   const t = e.target;
   if (t.dataset.setupName !== undefined) setup.names[+t.dataset.setupName] = t.value;
+  if (t.dataset.libSearch !== undefined) {
+    librarySearch = t.value;
+    document.getElementById('lib-rows').innerHTML = renderLibraryRows();
+  }
 });
 
 app.addEventListener('change', async (e) => {
