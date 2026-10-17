@@ -2,35 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Musical Whits</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Musical Wits</title>
   <meta name="description" content="A musical guessing game show for 2 to 4 teams, run by a host on one screen.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=Rubik:wght@400;500;700&family=Shrikhand&display=swap">
+  <meta name="theme-color" content="#0B0D1A">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Musical Wits">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div id="app">
     <!-- The game replaces this message as soon as it starts. -->
-    <main class="home load-help" style="max-width:640px;margin:40px auto;padding:0 16px;font-family:system-ui,sans-serif;color:#f7e8c6;background:#22140d">
-      <h1>Musical Whits</h1>
+    <main style="max-width:640px;margin:40px auto;padding:0 16px;font-family:system-ui,sans-serif;color:#FFF6E5;background:#0B0D1A">
+      <h1>Musical Wits</h1>
       <p>Loading the game... If this message stays on screen, the game could not start. Try these:</p>
       <ol>
         <li>Make sure you <b>extracted</b> the whole ZIP first (right-click it and choose "Extract All" on Windows), then open <b>index.html</b> from the extracted folder, not from inside the ZIP.</li>
-        <li>Keep the <b>css</b> and <b>js</b> folders next to index.html.</li>
+        <li>Keep the <b>css</b>, <b>js</b> and <b>fonts</b> folders next to index.html.</li>
         <li>Open it in an up-to-date <b>Chrome</b>, <b>Edge</b>, <b>Firefox</b> or <b>Safari</b> on a computer. Phone file viewers can't run the game.</li>
       </ol>
     </main>
   </div>
-  <noscript><p style="text-align:center;color:#f4f1ff">Musical Whits needs JavaScript turned on.</p></noscript>
+  <noscript><p style="text-align:center;color:#FFF6E5">Musical Wits needs JavaScript turned on.</p></noscript>
   <script src="js/tunes.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/rounds.js"></script>
   <script src="js/library.js"></script>
+  <script src="js/screens.js"></script>
   <script src="js/app.js"></script>
   <script src="js/online.js"></script>
+  <script>
+    // Installed as an app (home screen or Android), keep a copy of the game so it works offline.
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
 </body>
 </html>

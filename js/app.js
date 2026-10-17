@@ -1,7 +1,9 @@
-// Musical Whits: the screens, the game flow and the question editor.
+// Musical Wits: the game state and flow, the question editor and the event handling.
+// The game-show screens themselves are drawn in screens.js.
 
 const TEAM_KEYS = ['Q', 'P', 'Z', 'M'];
-const DEFAULT_TEAM_NAMES = ['The Treble Makers', 'Bass Invaders', 'The Rolling Scones', 'Notes Alone'];
+const DEFAULT_TEAM_NAMES = ['Treble Makers', 'Bass Pros', 'Note-orious', ''];
+const SETUP_KEY = 'musicalWhits.setup.v1';
 const MASHUP_MODES = { layer: 'Two songs layered', reverse: 'Played backwards', slow: 'Slowed down' };
 // Rounds where "random clip start" applies. Intro Sprint is about the intro, and
 // Lyric Gap has to stop right before its line, so those keep their set start.
@@ -16,7 +18,8 @@ let editorRound = 'r1';
 let libraryOpen = false;
 let librarySearch = '';
 const LIBRARY_ROWS_SHOWN = 60;
-let setup = { count: 3, names: DEFAULT_TEAM_NAMES.slice(), noNegative: false };
+let setup = { count: 3, names: DEFAULT_TEAM_NAMES.slice(), noNegative: false, punIdx: 0, punTarget: 0, ...(loadJSON(SETUP_KEY) || {}) };
+function saveSetup() { saveJSON(SETUP_KEY, setup); }
 
 const app = document.getElementById('app');
 
@@ -85,12 +88,12 @@ function answerText(roundId, it) {
 function ask(message, yesLabel, onYes) {
   const box = document.createElement('div');
   box.className = 'dialog-backdrop';
-  box.innerHTML = `<div class="dialog" role="dialog" aria-modal="true">
+  box.innerHTML = `<div class="dialog" role="dialog" aria-modal="true"><div class="dialog-inner">
     <p>${esc(message)}</p>
     <div class="row end">
       <button class="btn btn-ghost" data-dialog="no">Cancel</button>
-      <button class="btn btn-primary" data-dialog="yes">${esc(yesLabel)}</button>
-    </div></div>`;
+      <button class="btn btn-primary btn-small" data-dialog="yes">${esc(yesLabel)}</button>
+    </div></div></div>`;
   box.addEventListener('click', (e) => {
     const b = e.target.closest('[data-dialog]');
     if (!b && e.target !== box) return;
@@ -99,6 +102,19 @@ function ask(message, yesLabel, onYes) {
   });
   document.body.appendChild(box);
   box.querySelector('[data-dialog=yes]').focus();
+}
+
+// A pop-up with a title and some text, closed with one button.
+function showInfo(title, html) {
+  const box = document.createElement('div');
+  box.className = 'dialog-backdrop';
+  box.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="dialog-inner">
+    <h2>${esc(title)}</h2>${html}
+    <div class="row end"><button class="btn btn-primary btn-small" data-dialog="no">Close</button></div>
+  </div></div>`;
+  box.addEventListener('click', (e) => { if (e.target === box || e.target.closest('[data-dialog]')) box.remove(); });
+  document.body.appendChild(box);
+  box.querySelector('[data-dialog]').focus();
 }
 
 function notify(message) {
@@ -127,13 +143,14 @@ function flashScore(team, pts) {
 function newGame() {
   stopClip();
   game = {
-    teams: setup.names.slice(0, setup.count).map((name, i) => ({ name: name.trim() || 'Team ' + (i + 1), score: 0 })),
+    teams: setup.names.slice(0, setup.count).map((name, i) => ({ name: (name || '').trim() || 'Team ' + (i + 1), score: 0 })),
     noNegative: setup.noNegative,
     randomStart: settings.randomStart,
     items: settings.useLibrary && library.length ? libraryRounds() : null,
     r: 0, i: 0, phase: 'intro',
     roundStart: [],
     item: null,
+    gold: { team: null, rounds: 0 },
   };
   skipEmptyRounds();
   game.roundStart = game.teams.map((t) => t.score);
@@ -150,8 +167,10 @@ function skipEmptyRounds() {
 function freshItemState() {
   const r = round();
   if (r.type === 'trivia') return { timeLeft: r.seconds, revealed: false, marks: game.teams.map(() => false), done: false };
-  if (r.type === 'final') return { step: 'wager', wagers: game.teams.map(() => 0), marks: game.teams.map(() => false), revealed: false };
-  return { locked: [], buzzed: null, done: false, revealed: false, partial: false, stage: 0 };
+  if (r.type === 'final') {
+    return { step: 'wager', wagers: game.teams.map(() => 0), sealed: game.teams.map(() => false), cur: 0, draft: 0, marks: game.teams.map(() => false), revealed: false };
+  }
+  return { locked: [], buzzed: null, picking: false, done: false, revealed: false, partial: false, stage: 0 };
 }
 
 function startRound() {
@@ -171,9 +190,20 @@ function nextItem() {
     game.item = freshItemState();
   } else {
     game.phase = round().type === 'final' ? 'end' : 'roundEnd';
+    if (game.phase === 'roundEnd') updateGold();
   }
   saveGame();
   render();
+}
+
+// The Gold Record: a team that ends rounds at #1 on its own, round after round.
+function updateGold() {
+  const top = Math.max(...game.teams.map((t) => t.score));
+  const leaders = game.teams.map((t, i) => i).filter((i) => game.teams[i].score === top);
+  const g = game.gold || { team: null, rounds: 0 };
+  if (leaders.length !== 1) game.gold = { team: null, rounds: 0 };
+  else if (g.team === leaders[0]) game.gold = { team: g.team, rounds: g.rounds + 1 };
+  else game.gold = { team: leaders[0], rounds: 1 };
 }
 
 function nextRound() {
@@ -195,7 +225,9 @@ function buzz(team) {
   if (r.type === 'trivia' || r.type === 'final') return;
   if (!game.teams[team] || st.done || st.buzzed !== null || st.locked.includes(team)) return;
   st.buzzed = team;
+  st.picking = false;
   playBuzz(team);
+  if (navigator.vibrate) navigator.vibrate(80);
   if (clip) clip.pause();
   saveGame();
   render();
@@ -282,20 +314,9 @@ function updateProgress(pos, dur) {
 function updatePlayButton() {
   const playing = !!(clip && clip.playing);
   const btn = document.getElementById('play-btn');
-  if (btn) btn.innerHTML = playing ? '⏸ Pause' : '▶ Play';
-  const deck = document.getElementById('turntable');
+  if (btn) { btn.innerHTML = icon(playing ? 'pause' : 'play'); btn.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
+  const deck = document.getElementById('cartridge');
   if (deck) deck.classList.toggle('playing', playing);
-}
-
-// The record player drawn next to the play controls; it spins while a clip plays.
-function turntable() {
-  const r = round();
-  const label = r.id === 'final' ? 'Final' : 'Side ' + 'ABCDE'[game.r];
-  return `
-  <div id="turntable" class="turntable" aria-hidden="true">
-    <div class="platter"><div class="record"><div class="record-label"><span>${label}</span></div></div></div>
-    <div class="tonearm"></div>
-  </div>`;
 }
 
 // ---------- rendering ----------
@@ -303,300 +324,11 @@ function turntable() {
 function render() {
   if (screen === 'editor') app.innerHTML = renderEditor();
   else if (screen === 'player' && window.Online) app.innerHTML = Online.renderPlayer();
+  else if (screen === 'teams') app.innerHTML = renderTeams();
+  else if (screen === 'howto') app.innerHTML = renderHowTo();
   else if (screen === 'game' && game) { app.innerHTML = renderGame(); afterGameRender(); }
   else app.innerHTML = renderHome();
   if (window.Online) Online.afterRender();
-}
-
-function renderHome() {
-  const teamInputs = setup.names.slice(0, setup.count).map((n, i) => `
-    <div class="team-input team-${i}">
-      <span class="key-badge">${TEAM_KEYS[i]}</span>
-      <input type="text" maxlength="30" value="${esc(n)}" data-setup-name="${i}" aria-label="Team ${i + 1} name">
-    </div>`).join('');
-  const resume = game && game.phase !== 'end'
-    ? `<button class="btn btn-secondary" data-action="resume">Resume game in progress</button>` : '';
-  const counts = [2, 3, 4].map((c) => `<button class="chip ${setup.count === c ? 'on' : ''}" data-action="team-count" data-count="${c}">${c} teams</button>`).join('');
-  return `
-  <main class="home">
-    <header class="hero">
-      <div class="marquee-lights" aria-hidden="true"></div>
-      <div class="logo" aria-hidden="true"></div>
-      <h1>Musical Whits</h1>
-      <p class="tagline">The show where your ears do the thinking.</p>
-      <div class="hero-stripes" aria-hidden="true"><span></span><span></span><span></span></div>
-    </header>
-    <section class="card">
-      <h2>Teams</h2>
-      <div class="chips">${counts}</div>
-      <div class="team-inputs">${teamInputs}</div>
-      <p class="hint">Each team buzzes with its key on the keyboard (shown on the left), or by tapping its name on screen.</p>
-      <label class="check"><input type="checkbox" data-action="no-negative" ${setup.noNegative ? 'checked' : ''}> Kids' edition: no negative points</label>
-      <label class="check"><input type="checkbox" data-setting="randomStart" ${settings.randomStart ? 'checked' : ''}> Start each clip at a random point in the song</label>
-      <p class="hint check-hint">For Name That Tune, Mashup Mayhem and the Final. Intro Sprint and Lyric Gap keep their set start.</p>
-      <label class="check"><input type="checkbox" data-setting="useLibrary" ${settings.useLibrary && library.length ? 'checked' : ''} ${library.length ? '' : 'disabled'}> Pick songs at random from my music library${library.length ? ` (${library.length} song${library.length === 1 ? '' : 's'})` : ''}</label>
-      ${library.length ? '' : '<p class="hint check-hint">Add your songs under <b>Edit questions and music</b> first.</p>'}
-      <div class="row">
-        <button class="btn btn-primary" data-action="new-game">Start the show</button>
-        ${resume}
-      </div>
-    </section>
-    ${window.Online ? Online.homeCard() : ''}
-    <section class="card">
-      <h2>Songs and questions</h2>
-      <p>The game comes with placeholder tunes (public-domain melodies) so you can try it right away. Add your whole music library in one go, or set up each track yourself.</p>
-      <button class="btn btn-secondary" data-action="open-editor">Edit questions and music</button>
-    </section>
-    <details class="card howto">
-      <summary><h2>How to host</h2></summary>
-      <ol>
-        <li>Put this screen where all the teams can see and hear it.</li>
-        <li>Press <b>Play</b> (or the space bar) to start a clip.</li>
-        <li>Teams buzz with their key: ${TEAM_KEYS.map((k, i) => `<b>${k}</b> for team ${i + 1}`).join(', ')}. The music pauses on a buzz.</li>
-        <li>The team answers out loud and you press the matching scoring button. Wrong answers lock that team out and the music carries on.</li>
-        <li>Use <b>Reveal answer</b> if nobody gets it, then <b>Next track</b>.</li>
-        <li>The small <b>+ / −</b> buttons under each score let you fix a score at any time. Your ruling is final!</li>
-      </ol>
-      <p>Rounds: Name That Tune, Intro Sprint, Lyric Gap, Musical Trivia Lightning, Mashup Mayhem, then the Final Showdown wager.</p>
-    </details>
-  </main>`;
-}
-
-function renderScoreboard() {
-  const st = game.item || {};
-  const flash = game.flash && Date.now() - game.flash.at < 1500 ? game.flash : null;
-  return `<div class="scoreboard">${game.teams.map((t, i) => {
-    const cls = [
-      'team', 'team-' + i,
-      st.buzzed === i ? 'buzzed' : '',
-      (st.locked || []).includes(i) ? 'locked' : '',
-    ].join(' ');
-    const fl = flash && flash.team === i ? `<span class="flash ${flash.pts > 0 ? 'up' : 'down'}">${signed(flash.pts)}</span>` : '';
-    return `<div class="${cls}">
-      <button class="team-buzz" data-action="buzz" data-team="${i}" aria-label="Buzz for ${esc(t.name)}">
-        <span class="key-badge">${TEAM_KEYS[i]}</span>
-        <span class="team-name">${esc(t.name)}</span>
-        <span class="team-score">${t.score}</span>${fl}
-        ${(st.locked || []).includes(i) ? '<span class="lock-tag">locked out</span>' : ''}
-      </button>
-      <div class="adjust">
-        <button data-action="adjust" data-team="${i}" data-pts="-5" aria-label="Minus 5">−5</button>
-        <button data-action="adjust" data-team="${i}" data-pts="5" aria-label="Plus 5">+5</button>
-      </div>
-    </div>`;
-  }).join('')}</div>`;
-}
-
-function renderGame() {
-  let body = '';
-  let title = '';
-  if (game.phase === 'end') {
-    body = renderEnd();
-    title = 'Final results';
-  } else {
-    const r = round();
-    title = r.name;
-    if (game.phase === 'intro') body = renderIntro(r);
-    else if (game.phase === 'roundEnd') body = renderRoundEnd(r);
-    else if (r.type === 'trivia') body = renderTrivia(r);
-    else if (r.type === 'final') body = renderFinal(r);
-    else body = renderBuzzItem(r);
-  }
-  const roundNum = game.phase !== 'end' ? (round().id === 'final' ? 'Final' : 'Round ' + (game.r + 1)) : '';
-  return `
-  <div class="game">
-    <header class="topbar">
-      <div class="brand"><span class="logo small" aria-hidden="true"></span> Musical Whits</div>
-      <div class="round-label">${roundNum ? `<span class="dim">${roundNum}</span> ` : ''}${esc(title)}</div>
-      <span id="online-count" class="online-count"></span>
-      <div class="top-actions">
-        ${game.phase !== 'end' ? '<button class="btn btn-ghost" data-action="skip-round">Skip round</button>' : ''}
-        <button class="btn btn-ghost" data-action="home">Menu</button>
-      </div>
-    </header>
-    ${renderScoreboard()}
-    <main class="stage">${body}</main>
-  </div>`;
-}
-
-function renderIntro(r) {
-  const n = items().length;
-  const line = game.r === 0 || ROUNDS.slice(0, game.r).every((x) => !roundItems(x.id).length)
-    ? HOST_LINES.opening : r.type === 'final' ? HOST_LINES.final : null;
-  const noun = r.type === 'trivia' ? 'questions' : r.type === 'final' ? 'track' : 'tracks';
-  return `
-  <section class="panel intro">
-    <div class="eyebrow">${r.id === 'final' ? 'The Final Showdown' : 'Round ' + (game.r + 1)}</div>
-    <h2 class="big-title">${esc(r.name)}</h2>
-    <ul class="rules">${r.rules.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-    <p class="dim">${n} ${noun}</p>
-    ${line ? `<blockquote class="host-line"><span class="dim">Host says:</span> “${esc(line)}”</blockquote>` : ''}
-    <button class="btn btn-primary btn-big" data-action="start-round">Start ${esc(r.name)}</button>
-  </section>`;
-}
-
-function renderPlayer() {
-  return `
-  <div class="player">
-    ${turntable()}
-    <button id="play-btn" class="btn btn-primary btn-big" data-action="toggle-play">▶ Play</button>
-    <button class="btn btn-secondary" data-action="restart">⟲ From the top</button>
-    <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
-    <div id="progress-time" class="progress-time dim">0.0s</div>
-  </div>`;
-}
-
-function renderSprintPlayer(r, st) {
-  return `
-  <div class="player sprint">
-    ${turntable()}
-    ${r.stages.map((s, k) => `
-      <button class="btn ${st.stage > k ? 'btn-secondary' : 'btn-primary'} btn-big" data-action="stage" data-stage="${k}" ${k > st.stage ? 'disabled' : ''}>
-        ▶ ${s} sec <span class="stage-pts">${r.stagePoints[k]} pts</span>
-      </button>`).join('')}
-    <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
-    <div id="progress-time" class="progress-time dim">0.0s</div>
-  </div>`;
-}
-
-function renderBuzzItem(r) {
-  const it = item();
-  const st = game.item;
-  const n = items().length;
-  let clue = '';
-  if (r.id === 'r3' && it.before) clue = `<p class="clue">${esc(it.before)}</p><p class="dim">What comes next?</p>`;
-  if (r.id === 'r5') clue = `<p class="clue">${esc(MASHUP_MODES[it.mode] || '')}</p><p class="dim">${it.mode === 'layer' ? 'Name both songs.' : 'Name the song.'}</p>`;
-
-  let buzzArea;
-  if (st.buzzed !== null) {
-    const team = game.teams[st.buzzed];
-    buzzArea = `
-      <div class="buzz-alert team-${st.buzzed}">
-        <div class="buzz-who">${esc(team.name)} buzzed!</div>
-        <div class="judge">${optionsFor(r, it, st).map((o) => `
-          <button class="btn ${o.kind === 'wrong' ? 'btn-wrong' : 'btn-right'}" data-action="judge" data-kind="${o.kind}" data-points="${o.points}">
-            ${esc(o.label)} <span class="pts">${signed(o.points)}</span>
-          </button>`).join('')}</div>
-      </div>`;
-  } else if (st.done) {
-    buzzArea = `<div class="buzz-status done">Track scored!</div>`;
-  } else {
-    const open = game.teams.map((t, i) => i).filter((i) => !st.locked.includes(i));
-    buzzArea = open.length
-      ? `<div class="buzz-status">Buzzers open: ${open.map((i) => `<span class="key-badge team-${i}">${TEAM_KEYS[i]}</span>`).join(' ')}${st.partial ? ' <b>Steal is on!</b>' : ''}</div>`
-      : `<div class="buzz-status">Everyone is locked out. Reveal the answer.</div>`;
-  }
-
-  return `
-  <section class="panel item">
-    <div class="eyebrow"><span class="selection">${'ABCDE'[game.r]}${game.i + 1}</span> Track ${game.i + 1} of ${n}</div>
-    ${clue}
-    ${r.type === 'sprint' ? renderSprintPlayer(r, st) : renderPlayer()}
-    ${buzzArea}
-    <div class="answer ${st.revealed ? 'shown' : ''}">
-      ${st.revealed ? answerText(r.id, it) : '<button class="btn btn-ghost" data-action="reveal">Reveal answer</button>'}
-    </div>
-    <div class="row end">
-      <button class="btn btn-primary" data-action="next-item">${game.i + 1 < n ? 'Next track →' : 'Finish round →'}</button>
-    </div>
-  </section>`;
-}
-
-function renderTrivia(r) {
-  const it = item();
-  const st = game.item;
-  const n = items().length;
-  return `
-  <section class="panel item">
-    <div class="eyebrow">Question ${game.i + 1} of ${n}</div>
-    <h2 class="question">${esc(it.question)}</h2>
-    <div class="timer ${st.timeLeft <= 5 ? 'urgent' : ''}" id="trivia-timer">${st.timeLeft}</div>
-    <div class="row center">
-      <button class="btn btn-secondary" data-action="trivia-timer">${triviaTimer ? 'Pause timer' : st.timeLeft < r.seconds ? 'Resume timer' : 'Start 15-second timer'}</button>
-    </div>
-    <div class="answer ${st.revealed ? 'shown' : ''}">
-      ${st.revealed ? answerText('r4', it) : '<button class="btn btn-ghost" data-action="reveal">Reveal answer</button>'}
-    </div>
-    ${st.revealed ? `
-      <p class="dim center">Tap every team that got it right (+${r.points} each):</p>
-      <div class="marks">${game.teams.map((t, i) => `
-        <button class="mark team-${i} ${st.marks[i] ? 'on' : ''}" data-action="mark" data-team="${i}" ${st.done ? 'disabled' : ''}>${st.marks[i] ? '✓ ' : ''}${esc(t.name)}</button>`).join('')}</div>` : ''}
-    <div class="row end">
-      <button class="btn btn-primary" data-action="trivia-next" ${st.revealed ? '' : 'disabled'}>${game.i + 1 < n ? 'Award points & next →' : 'Award points & finish round →'}</button>
-    </div>
-  </section>`;
-}
-
-function renderFinal(r) {
-  const it = item();
-  const st = game.item;
-  if (st.step === 'wager') {
-    return `
-    <section class="panel item">
-      <div class="eyebrow">Category</div>
-      <h2 class="big-title">${esc(it.category || 'Mystery')}</h2>
-      <p>Each team secretly writes down a wager: any amount from 0 up to its current score. Then type them in here.</p>
-      <div class="wagers">${game.teams.map((t, i) => `
-        <label class="wager team-${i}"><span>${esc(t.name)} <span class="dim">(max ${Math.max(0, t.score)})</span></span>
-          <input type="number" min="0" max="${Math.max(0, t.score)}" step="1" value="${st.wagers[i]}" data-wager="${i}">
-        </label>`).join('')}</div>
-      <div class="row end"><button class="btn btn-primary" data-action="lock-wagers">Lock in wagers →</button></div>
-    </section>`;
-  }
-  return `
-  <section class="panel item">
-    <div class="eyebrow">Category: ${esc(it.category || 'Mystery')}</div>
-    <p>One 10-second clip. Every team writes down the song title <b>and</b> the artist.</p>
-    ${renderPlayer()}
-    <div class="answer ${st.revealed ? 'shown' : ''}">
-      ${st.revealed ? answerText('final', it) : '<button class="btn btn-ghost" data-action="reveal">Reveal answer</button>'}
-    </div>
-    ${st.revealed ? `
-      <p class="dim center">Tap every team that got <b>both</b> the title and the artist right:</p>
-      <div class="marks">${game.teams.map((t, i) => `
-        <button class="mark team-${i} ${st.marks[i] ? 'on' : ''}" data-action="mark" data-team="${i}">${st.marks[i] ? '✓ ' : ''}${esc(t.name)} <span class="dim">(wager ${st.wagers[i]})</span></button>`).join('')}</div>
-      <div class="row end"><button class="btn btn-primary" data-action="apply-final">Apply wagers & crown the champions →</button></div>` : ''}
-  </section>`;
-}
-
-function standingsTable(showDelta) {
-  const rows = game.teams.map((t, i) => ({ ...t, i, delta: t.score - (game.roundStart[i] || 0) }))
-    .sort((a, b) => b.score - a.score);
-  return `<ol class="standings">${rows.map((t) => `
-    <li class="team-${t.i}"><span class="team-name">${esc(t.name)}</span>
-      ${showDelta ? `<span class="dim delta">${signed(t.delta)} this round</span>` : ''}
-      <span class="team-score">${t.score}</span></li>`).join('')}</ol>`;
-}
-
-function renderRoundEnd(r) {
-  let nextIdx = game.r + 1;
-  while (nextIdx < ROUNDS.length && !roundItems(ROUNDS[nextIdx].id).length) nextIdx++;
-  const next = ROUNDS[nextIdx];
-  return `
-  <section class="panel intro">
-    <div class="eyebrow">End of ${esc(r.name)}</div>
-    <h2 class="big-title">Scoreboard</h2>
-    ${standingsTable(true)}
-    <blockquote class="host-line"><span class="dim">Host:</span> ${esc(HOST_LINES.between)}</blockquote>
-    <button class="btn btn-primary btn-big" data-action="next-round">${next ? 'Next up: ' + esc(next.name) + ' →' : 'See final results →'}</button>
-  </section>`;
-}
-
-function renderEnd() {
-  const top = Math.max(...game.teams.map((t) => t.score));
-  const winners = game.teams.filter((t) => t.score === top).map((t) => t.name);
-  return `
-  <section class="panel intro end-screen">
-    <div class="confetti" aria-hidden="true">${'♪♫♬♩'.repeat(6).split('').map((c, i) => `<span style="left:${(i * 37) % 100}%;animation-delay:${(i % 8) * 0.35}s">${c}</span>`).join('')}</div>
-    <div class="eyebrow">${winners.length > 1 ? 'It\'s a tie!' : 'Your champions'}</div>
-    <h2 class="big-title">🏆 ${winners.map(esc).join(' & ')}</h2>
-    ${standingsTable(false)}
-    <blockquote class="host-line">“${esc(HOST_LINES.closing)}”</blockquote>
-    <div class="row center">
-      <button class="btn btn-primary" data-action="play-again">Play again</button>
-      <button class="btn btn-secondary" data-action="home">Back to menu</button>
-    </div>
-  </section>`;
 }
 
 function afterGameRender() {
@@ -606,7 +338,7 @@ function afterGameRender() {
     updatePlayButton();
   }
   if (game.flash) setTimeout(() => {
-    document.querySelectorAll('.flash').forEach((el) => el.remove());
+    document.querySelectorAll('.contestant .flash').forEach((el) => el.remove());
   }, 1500);
 }
 
@@ -619,7 +351,9 @@ function toggleTriviaTimer() {
   triviaTimer = setInterval(() => {
     st.timeLeft--;
     const el = document.getElementById('trivia-timer');
-    if (el) { el.textContent = st.timeLeft; el.classList.toggle('urgent', st.timeLeft <= 5); }
+    if (el) el.innerHTML = flaps('trivia', st.timeLeft, 2, 'xl');
+    const wrap = document.getElementById('trivia-timer-wrap');
+    if (wrap) wrap.classList.toggle('urgent', st.timeLeft <= 5);
     if (st.timeLeft <= 0) {
       stopTriviaTimer();
       playJingle(false);
@@ -638,7 +372,7 @@ function audioPicker(path, src) {
   if (src.kind === 'tune') {
     detail = `<select data-path="${path}.tune">${Object.entries(TUNES).map(([id, t]) => `<option value="${id}" ${src.tune === id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`;
   } else if (src.kind === 'file') {
-    detail = `<span class="file-name">${src.fileName ? '🎵 ' + esc(src.fileName) : 'No file chosen yet'}</span>
+    detail = `<span class="file-name">${src.fileName ? esc(src.fileName) : 'No file chosen yet'}</span>
       <label class="btn btn-secondary file-btn">${src.fileName ? 'Choose a different file' : 'Choose audio file'}
         <input class="file-input" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac" data-file-path="${path}">
       </label>
@@ -701,20 +435,18 @@ function renderEditor() {
   const tabs = ROUNDS.map((x) => `<button class="tab ${x.id === editorRound ? 'on' : ''}" data-action="editor-tab" data-round="${x.id}">${esc(x.name)} <span class="dim">(${(pack[x.id] || []).length})</span></button>`).join('');
   return `
   <main class="editor">
-    <header class="topbar">
-      <div class="brand"><span class="logo small" aria-hidden="true"></span> Edit questions and music</div>
-      <div class="top-actions"><button class="btn btn-primary" data-action="home">Done</button></div>
-    </header>
-    <p class="hint">Changes save automatically in this browser. Audio files you add stay on this computer and are never uploaded. Recommended counts from the rules: 10, 8, 8, 10, 6 and 1. Leave a round empty to skip it.</p>
+    ${topbar('Songs', { actions: '<button class="btn btn-primary btn-small" data-action="home">Done</button>' })}
+    <div class="screen-title">Songs and questions</div>
+    <p class="hint" style="margin:0">Changes save automatically in this browser. Audio files you add stay on this computer and are never uploaded. Recommended counts from the rules: 10, 8, 8, 10, 6 and 1. Leave a round empty to skip it.</p>
     ${renderLibrary()}
     <nav class="tabs">${tabs}</nav>
-    <section class="card">
+    <section class="card"><div class="card-body">
       <h2>${esc(r.name)}</h2>
       <ul class="rules small">${r.rules.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       ${list.map((it, idx) => editorItem(editorRound, it, idx)).join('') || '<p class="dim">No tracks yet. This round will be skipped.</p>'}
-      <button class="btn btn-secondary" data-action="add-item">+ Add ${editorRound === 'r4' ? 'question' : 'track'}</button>
-    </section>
-    <section class="card">
+      <button class="dashed-btn" data-action="add-item">+ Add ${editorRound === 'r4' ? 'question' : 'track'}</button>
+    </div></section>
+    <section class="card"><div class="card-body">
       <h2>Backup</h2>
       <p class="dim">Save your question pack to a file, or load one. (Audio files are not included; built-in tunes and web links are.)</p>
       <div class="row">
@@ -722,7 +454,7 @@ function renderEditor() {
         <label class="btn btn-secondary file-btn">Load pack<input class="file-input" type="file" accept=".json,application/json" data-import></label>
         <button class="btn btn-ghost danger" data-action="reset-pack">Reset to starter pack</button>
       </div>
-    </section>
+    </div></section>
   </main>`;
 }
 
@@ -736,9 +468,9 @@ function renderLibraryRows() {
     <div class="lib-row">
       <input type="text" value="${esc(s.title)}" data-lib="${i}" data-lib-field="title" aria-label="Title">
       <input type="text" value="${esc(s.artist)}" data-lib="${i}" data-lib-field="artist" placeholder="Artist" aria-label="Artist">
-      <button class="btn btn-ghost btn-small" data-action="lib-preview" data-idx="${i}" aria-label="Play a bit of ${esc(s.title)}">▶</button>
-      <button class="btn btn-ghost btn-small danger" data-action="lib-remove" data-idx="${i}" aria-label="Remove ${esc(s.title)}">✕</button>
-      ${s.album ? `<span class="lib-album">💿 ${esc(s.album)}</span>` : ''}
+      <button class="btn btn-ghost btn-small" data-action="lib-preview" data-idx="${i}" aria-label="Play a bit of ${esc(s.title)}">${icon('play')}</button>
+      <button class="btn btn-ghost btn-small danger" data-action="lib-remove" data-idx="${i}" aria-label="Remove ${esc(s.title)}">×</button>
+      ${s.album ? `<span class="lib-album">Album: ${esc(s.album)}</span>` : ''}
     </div>`;
   }).join('');
   const count = librarySearch.trim()
@@ -754,9 +486,9 @@ function renderLibrary() {
   const n = library.length;
   const accept = 'audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac';
   return `
-    <section class="card library">
+    <section class="card library"><div class="card-body">
       <h2>My music library <span class="dim">(${n} song${n === 1 ? '' : 's'})</span></h2>
-      <p>Add as many songs as you like at once. Then tick <b>Pick songs at random from my music library</b> on the menu, and every new game draws Name That Tune, Intro Sprint, Mashup Mayhem and the Final from here, with no song played twice in a game. Lyric Gap and Trivia still use the questions below.</p>
+      <p>Add as many songs as you like at once. Then tick <b>Pick songs at random from my music library</b> under <b>Game options</b> on the Teams screen, and every new game draws Name That Tune, Intro Sprint, Mashup Mayhem and the Final from here, with no song played twice in a game. Lyric Gap and Trivia still use the questions below.</p>
       <div class="row">
         <label class="btn btn-primary file-btn">+ Add songs<input class="file-input" type="file" multiple accept="${accept}" data-library-add></label>
         <label class="btn btn-secondary file-btn">Add a whole folder<input class="file-input" type="file" webkitdirectory multiple data-library-add></label>
@@ -767,7 +499,7 @@ function renderLibrary() {
         <input type="search" class="lib-search" placeholder="Search by song, artist or album" value="${esc(librarySearch)}" data-lib-search aria-label="Search your library">
         <p class="hint">Names come from each file's tags or its file name. Fix any that look wrong; they're the answers on screen.</p>
         <div id="lib-rows">${renderLibraryRows()}</div></details>` : ''}
-    </section>`;
+    </div></section>`;
 }
 
 function getPath(path) {
@@ -813,6 +545,22 @@ async function preview(idx) {
   }
 }
 
+// Moves the tuning dial without redrawing the screen, so dragging stays smooth.
+function setWagerDraft(v) {
+  const st = game.item;
+  const max = wagerMax(st.cur);
+  st.draft = Math.max(0, Math.min(max, v));
+  const d = dialParts(max, st.draft);
+  const needle = document.getElementById('needle');
+  const knob = document.getElementById('knob');
+  const readout = document.getElementById('wager-readout');
+  const range = document.querySelector('[data-wager-range]');
+  if (needle) needle.style.left = d.needle;
+  if (knob) knob.style.transform = d.knob;
+  if (readout) readout.innerHTML = flaps('wager', st.draft, 3, '', 'amber');
+  if (range && +range.value !== st.draft) range.value = st.draft;
+}
+
 // ---------- events ----------
 
 app.addEventListener('click', (e) => {
@@ -821,14 +569,33 @@ app.addEventListener('click', (e) => {
   const a = el.dataset.action;
   const st = game && game.item;
   switch (a) {
-    case 'team-count': setup.count = +el.dataset.count; render(); break;
+    case 'open-teams': screen = 'teams'; render(); break;
+    case 'howto': screen = 'howto'; render(); break;
+    case 'round-info': showRoundInfo(el.dataset.round); break;
+    case 'pun': pullLever(); break;
+    case 'add-team': if (setup.count < 4) { setup.count++; saveSetup(); render(); } break;
+    case 'remove-team': {
+      const i = +el.dataset.team;
+      setup.names.splice(i, 1);
+      setup.names.push('');
+      setup.count = Math.max(2, setup.count - 1);
+      saveSetup();
+      render();
+      break;
+    }
+    case 'big-buzz':
+      if (st.buzzed !== null || st.done) break;
+      st.picking = !st.picking;
+      if (st.picking) { if (clip) clip.pause(); updatePlayButton(); playBuzz(0); }
+      render();
+      break;
     case 'new-game':
       if (game && game.phase !== 'end') ask('Start a new game? The game in progress will be lost.', 'Start new game', newGame);
       else newGame();
       break;
     case 'resume': screen = 'game'; render(); break;
     case 'open-editor': screen = 'editor'; render(); break;
-    case 'home': stopClip(); stopTriviaTimer(); if (previewClip) previewClip.stop(); screen = 'home'; render(); break;
+    case 'home': stopClip(); stopTriviaTimer(); if (previewClip) previewClip.stop(); screen = 'home'; render(); window.scrollTo(0, 0); break;
     case 'play-again': game = null; saveGame(); screen = 'home'; render(); break;
     case 'skip-round':
       ask('Skip the rest of this round?', 'Skip round', () => {
@@ -862,15 +629,26 @@ app.addEventListener('click', (e) => {
       }
       nextItem();
       break;
-    case 'lock-wagers':
-      document.querySelectorAll('[data-wager]').forEach((inp) => {
-        const i = +inp.dataset.wager;
-        st.wagers[i] = Math.max(0, Math.min(Math.max(0, game.teams[i].score), Math.floor(+inp.value || 0)));
-      });
-      st.step = 'play';
+    // final showdown wagers: one team at a time, kept secret
+    case 'wager-tab': st.cur = +el.dataset.team; st.draft = 0; render(); break;
+    case 'preset': {
+      const max = wagerMax(st.cur);
+      const v = +el.dataset.frac === 1 ? max : Math.round((max * +el.dataset.frac) / 5) * 5;
+      setWagerDraft(Math.min(max, v));
+      break;
+    }
+    case 'seal': {
+      st.wagers[st.cur] = Math.max(0, Math.min(wagerMax(st.cur), Math.floor(st.draft) || 0));
+      st.sealed[st.cur] = true;
+      st.draft = 0;
+      const next = st.sealed.findIndex((x) => !x);
+      if (next >= 0) st.cur = next; else st.step = 'play';
       saveGame();
       render();
       break;
+    }
+    case 'unseal': st.sealed[st.cur] = false; st.draft = 0; saveGame(); render(); break;
+    case 'seal-next': if (st.sealed.every(Boolean)) { st.step = 'play'; saveGame(); render(); } break;
     case 'apply-final':
       stopClip();
       game.roundStart = game.teams.map((t) => t.score);
@@ -915,7 +693,7 @@ app.addEventListener('click', (e) => {
       const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'musical-whits-pack.json';
+      link.download = 'musical-wits-pack.json';
       link.click();
       break;
     }
@@ -927,7 +705,11 @@ app.addEventListener('click', (e) => {
 
 app.addEventListener('input', (e) => {
   const t = e.target;
-  if (t.dataset.setupName !== undefined) setup.names[+t.dataset.setupName] = t.value;
+  if (t.dataset.setupName !== undefined) {
+    if (/\n/.test(t.value)) { t.value = t.value.replace(/\n/g, ''); t.blur(); }
+    setup.names[+t.dataset.setupName] = t.value; saveSetup();
+  }
+  if (t.dataset.wagerRange !== undefined) setWagerDraft(+t.value);
   if (t.dataset.libSearch !== undefined) {
     librarySearch = t.value;
     document.getElementById('lib-rows').innerHTML = renderLibraryRows();
@@ -936,7 +718,7 @@ app.addEventListener('input', (e) => {
 
 app.addEventListener('change', async (e) => {
   const t = e.target;
-  if (t.dataset.action === 'no-negative') { setup.noNegative = t.checked; return; }
+  if (t.dataset.action === 'no-negative') { setup.noNegative = t.checked; saveSetup(); return; }
   if (t.dataset.setting) { settings[t.dataset.setting] = t.checked; saveSettings(); return; }
   if (t.dataset.libField) { library[+t.dataset.lib][t.dataset.libField] = t.value.trim(); saveLibrary(); return; }
   if (t.dataset.libraryAdd !== undefined && t.files.length) {
@@ -986,7 +768,7 @@ app.addEventListener('change', async (e) => {
   if (t.dataset.import !== undefined && t.files[0]) {
     try {
       const data = JSON.parse(await t.files[0].text());
-      if (!data || typeof data !== 'object' || !ROUNDS.some((r) => Array.isArray(data[r.id]))) throw new Error('not a Musical Whits pack');
+      if (!data || typeof data !== 'object' || !ROUNDS.some((r) => Array.isArray(data[r.id]))) throw new Error('not a Musical Wits pack');
       pack = data;
       savePack();
       render();

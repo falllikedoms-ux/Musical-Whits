@@ -150,49 +150,43 @@ window.Online = (() => {
 
   function renderPlayer() {
     const s = hostState;
-    const brand = `<header class="topbar"><div class="brand"><span class="logo small" aria-hidden="true"></span> Musical Whits</div>
-      <div class="top-actions"><button class="btn btn-ghost" data-online="leave">Menu</button></div></header>`;
+    const head = topbar('Player', { actions: '<button class="btn btn-small" data-online="leave">Menu</button>' });
     if (!s) {
-      return `<div class="game player-screen">${brand}<main class="stage"><section class="panel intro">
-        <div class="eyebrow">Player buzzer</div>
-        <h2 class="big-title">Waiting for the host</h2>
-        <p>Keep this page open. Your buzzer appears here as soon as the host starts the show.</p>
-      </section></main></div>`;
+      return `<main class="screen">${head}
+        ${dome('Player buzzer', 'Waiting', 'Keep this page open. Your buzzer appears here as soon as the host starts the show.')}
+      </main>`;
     }
     if (myTeam === null || !s.teams[myTeam]) {
-      return `<div class="game player-screen">${brand}<main class="stage"><section class="panel intro">
-        <div class="eyebrow">Player buzzer</div>
-        <h2 class="big-title">Pick your team</h2>
+      return `<main class="screen">${head}
+        <div class="screen-title">Pick your team</div>
+        <div class="chrome-rule" aria-hidden="true"></div>
         <div class="team-pick">${s.teams.map((t, i) => `
-          <button class="btn team-${i} pick" data-online="team" data-team="${i}">${esc(t.name)}</button>`).join('')}</div>
-      </section></main></div>`;
+          <button class="btn pick team-${i}" data-online="team" data-team="${i}">${esc(t.name)}</button>`).join('')}</div>
+      </main>`;
     }
     const st = playerStatus();
     const team = s.teams[myTeam];
     const scores = s.teams.map((t, i) => `<li class="team-${i} ${i === myTeam ? 'me' : ''}"><span class="team-name">${esc(t.name)}</span><span class="team-score">${t.score}</span></li>`).join('');
-    return `<div class="game player-screen">${brand}<main class="stage">
-      <section class="panel intro team-${myTeam}">
-        <div class="eyebrow">${esc(s.round)}${s.track ? ' · ' + esc(s.track) : ''}</div>
-        <h2 class="player-team">${esc(team.name)}</h2>
-        <button class="big-buzzer ${st.ready ? 'ready' : ''} ${st.mine ? 'mine' : ''}" data-online="buzz" ${st.ready ? '' : 'disabled'} aria-label="Buzz">
-          <span>BUZZ</span>
-        </button>
-        <p class="buzz-state">${esc(st.text)}</p>
-        <p class="hint">Tap the buzzer, or press the space bar on a computer.</p>
-        <ol class="standings mini">${scores}</ol>
-        <button class="btn btn-ghost btn-small" data-online="switch">Change team</button>
-      </section></main></div>`;
+    return `<main class="screen team-${myTeam}">${head}
+      <div class="label" style="text-align:center">${esc(s.round)}${s.track ? ' · ' + esc(s.track) : ''}</div>
+      <h2 class="player-team">${esc(team.name)}</h2>
+      <button class="big-buzzer ${st.ready ? 'ready' : ''} ${st.mine ? 'mine' : ''}" data-online="buzz" ${st.ready ? '' : 'disabled'} aria-label="Buzz">${st.mine ? 'BUZZED!' : 'BUZZ'}</button>
+      <p class="buzz-state">${esc(st.text)}</p>
+      <p class="hint" style="text-align:center">Tap the buzzer, or press the space bar on a computer.</p>
+      <ol class="standings mini">${scores}</ol>
+      <div class="bottom"><button class="btn btn-ghost" data-online="switch">Change team</button></div>
+    </main>`;
   }
 
   // ---------- home screen ----------
 
   function homeCard() {
     if (!room) return '';
-    return `<section class="card online-card">
+    return `<section class="card online-card"><div class="card-body">
       <h2>Play together online</h2>
       <p>Players far away can use their own phone as a buzzer. Share this game from the page's <b>Share</b> menu with each player, then have them open it and tap <b>Join as a player</b>. Run the show from this screen as usual, and share your sound on a video call so everyone can hear the music.</p>
       <button class="btn btn-secondary" data-online="join">Join as a player</button>
-    </section>`;
+    </div></section>`;
   }
 
   function afterRender() {
