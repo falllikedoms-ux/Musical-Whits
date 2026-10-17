@@ -117,6 +117,28 @@ function showInfo(title, html) {
   box.querySelector('[data-dialog]').focus();
 }
 
+// Adds songs to the library with a progress note, then says how it went.
+async function addSongs(files) {
+  const progress = document.createElement('div');
+  progress.className = 'toast';
+  progress.setAttribute('role', 'status');
+  progress.textContent = 'Looking for songs...';
+  document.body.appendChild(progress);
+  try {
+    const res = await addToLibrary(files, (k, n) => { progress.textContent = `Adding song ${k} of ${n}...`; });
+    progress.remove();
+    const extra = [res.skipped ? `${res.skipped} already in your library` : '', res.ignored ? `${res.ignored} not audio` : ''].filter(Boolean).join(', ');
+    notify(res.added || res.skipped
+      ? `Added ${res.added} song${res.added === 1 ? '' : 's'}.${extra ? ' Skipped ' + extra + '.' : ''}`
+      : 'No songs found in that folder.');
+  } catch (err) {
+    progress.remove();
+    notify(err.message);
+  }
+  libraryOpen = libraryOpen || library.length <= 30;
+  render();
+}
+
 function notify(message) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -491,10 +513,12 @@ function renderLibrary() {
       <p>Add as many songs as you like at once. Then tick <b>Pick songs at random from my music library</b> under <b>Game options</b> on the Teams screen, and every new game draws Name That Tune, Intro Sprint, Mashup Mayhem and the Final from here, with no song played twice in a game. Lyric Gap and Trivia still use the questions below.</p>
       <div class="row">
         <label class="btn btn-primary file-btn">+ Add songs<input class="file-input" type="file" multiple accept="${accept}" data-library-add></label>
-        <label class="btn btn-secondary file-btn">Add a whole folder<input class="file-input" type="file" webkitdirectory multiple data-library-add></label>
+        ${nativeFolderPicker()
+          ? '<button class="btn btn-secondary" data-action="native-folder">Add a whole folder</button>'
+          : '<label class="btn btn-secondary file-btn">Add a whole folder<input class="file-input" type="file" webkitdirectory multiple data-library-add></label>'}
         ${n ? '<button class="btn btn-ghost danger" data-action="clear-library">Remove all</button>' : ''}
       </div>
-      <p class="hint"><b>Add a whole folder</b> takes every song in the folder you pick, including all the album folders inside it. If your phone shows a plain list of files instead of folders, use <b>+ Add songs</b>: open an album, press and hold one song, then pick <b>Select all</b> from the menu. Songs are copied into this browser on this device, so they use some of its storage. They are never uploaded.</p>
+      <p class="hint"><b>Add a whole folder</b> takes every song in the folder you pick, including all the album folders inside it. If your phone only lets you pick single files here, use the Musical Wits Android app, which can pick whole folders, or use <b>+ Add songs</b>: open an album, press and hold one song, then pick <b>Select all</b> from the menu. Songs are copied into this browser on this device, so they use some of its storage. They are never uploaded.</p>
       ${n ? `<details class="lib-list" ${libraryOpen ? 'open' : ''}><summary>Search and check songs (${n})</summary>
         <input type="search" class="lib-search" placeholder="Search by song, artist or album" value="${esc(librarySearch)}" data-lib-search aria-label="Search your library">
         <p class="hint">Names come from each file's tags or its file name. Fix any that look wrong; they're the answers on screen.</p>
@@ -686,6 +710,13 @@ app.addEventListener('click', (e) => {
       ask(`Remove the ${matches.length} songs matching "${librarySearch.trim()}" from your library?`, 'Remove', () => { removeManyFromLibrary(matches); librarySearch = ''; render(); });
       break;
     }
+    case 'native-folder': {
+      const picker = nativeFolderPicker();
+      picker.pick()
+        .then((files) => (files.length ? addSongs(files).finally(picker.cleanup) : null))
+        .catch((err) => notify('Could not open that folder: ' + err.message));
+      break;
+    }
     case 'clear-library':
       ask(`Remove all ${library.length} songs from your library? The files on your device itself are not touched.`, 'Remove all', () => { clearLibrary(); render(); });
       break;
@@ -722,21 +753,7 @@ app.addEventListener('change', async (e) => {
   if (t.dataset.setting) { settings[t.dataset.setting] = t.checked; saveSettings(); return; }
   if (t.dataset.libField) { library[+t.dataset.lib][t.dataset.libField] = t.value.trim(); saveLibrary(); return; }
   if (t.dataset.libraryAdd !== undefined && t.files.length) {
-    const progress = document.createElement('div');
-    progress.className = 'toast';
-    progress.setAttribute('role', 'status');
-    document.body.appendChild(progress);
-    try {
-      const res = await addToLibrary(t.files, (k, n) => { progress.textContent = `Adding song ${k} of ${n}...`; });
-      progress.remove();
-      const extra = [res.skipped ? `${res.skipped} already in your library` : '', res.ignored ? `${res.ignored} not audio` : ''].filter(Boolean).join(', ');
-      notify(`Added ${res.added} song${res.added === 1 ? '' : 's'}.${extra ? ' Skipped ' + extra + '.' : ''}`);
-    } catch (err) {
-      progress.remove();
-      notify(err.message);
-    }
-    libraryOpen = libraryOpen || library.length <= 30;
-    render();
+    await addSongs(t.files);
     return;
   }
   if (t.dataset.path) {

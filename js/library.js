@@ -84,17 +84,49 @@ function removeManyFromLibrary(indexes) {
   saveLibrary();
 }
 
+// In the Android app, the phone's own folder picker (see android-src/FolderPickerPlugin.java),
+// because Android's app file picker can only choose single files.
+function nativeFolderPicker() {
+  const cap = window.Capacitor;
+  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || cap.getPlatform() !== 'android') return null;
+  const call = (method, options = {}) => (cap.Plugins && cap.Plugins.FolderPicker
+    ? cap.Plugins.FolderPicker[method](options)
+    : cap.nativePromise('FolderPicker', method, options));
+  return {
+    // Asks for a folder and lists every file in it and its subfolders.
+    async pick() {
+      const res = await call('pick');
+      return (res.files || []).map((f) => ({
+        name: f.name, size: f.size, type: f.type || '', webkitRelativePath: f.path,
+        // Copies the song somewhere the game can read it, only when it's needed.
+        async getFile() {
+          const { path } = await call('copy', { uri: f.uri });
+          const blob = await (await fetch(cap.convertFileSrc('file://' + path))).blob();
+          return new File([blob], f.name, { type: f.type || blob.type });
+        },
+      }));
+    },
+    cleanup: () => call('cleanup').catch(() => {}),
+  };
+}
+
 // Adds files to the library one at a time, reporting progress as it goes.
 // A whole folder works too: songs in its album folders come along, other files are skipped.
+// Each item is a File, or a stand-in with getFile() that fetches the song when it's its turn.
 async function addToLibrary(files, onProgress) {
   const known = new Set(library.map((s) => s.fileName + '|' + s.size));
   const audio = [...files].filter((f) => /^audio\//.test(f.type) || /\.(mp3|m4a|aac|wav|ogg|oga|flac|opus|webm)$/i.test(f.name));
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   let added = 0;
   for (let k = 0; k < audio.length; k++) {
-    const file = audio[k];
+    let file = audio[k];
     if (onProgress) onProgress(k + 1, audio.length);
     if (known.has(file.name + '|' + file.size)) continue;
+    const relPath = file.webkitRelativePath;
+    const size = file.size;
+    if (file.getFile) {
+      try { file = await file.getFile(); } catch (e) { continue; }
+    }
     const tags = await readTags(file);
     const guess = guessFromFileName(file.name);
     const fileId = 'lib' + Date.now() + Math.random().toString(36).slice(2, 7);
@@ -104,8 +136,8 @@ async function addToLibrary(files, onProgress) {
       saveLibrary();
       throw new Error(`Only ${added} songs fit. This device is out of space for more.`);
     }
-    library.push({ fileId, fileName: file.name, size: file.size, title: tags.title || guess.title, artist: tags.artist || guess.artist, album: tags.album || folderName(file) });
-    known.add(file.name + '|' + file.size);
+    library.push({ fileId, fileName: file.name, size, title: tags.title || guess.title, artist: tags.artist || guess.artist, album: tags.album || folderName({ webkitRelativePath: relPath }) });
+    known.add(file.name + '|' + size);
     added++;
     if (added % 10 === 0) saveLibrary();
   }
