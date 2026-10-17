@@ -34,6 +34,7 @@ jobs:
           npm run copy-web
           npx cap add android
           npx cap sync android
+          cp android-src/com/musicalwits/app/*.java android/app/src/main/java/com/musicalwits/app/
 
       - name: Use the Musical Wits icon
         run: |
