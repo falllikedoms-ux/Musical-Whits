@@ -177,3 +177,29 @@ function playJingle(good) {
     osc.stop(t + 0.31);
   });
 }
+
+// A short burst of studio-audience applause: lots of tiny filtered noise claps.
+function playApplause() {
+  const ctx = getCtx();
+  if (ctx.state !== 'running') return;
+  const len = Math.floor(ctx.sampleRate * 0.03);
+  const noise = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = noise.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  const out = ctx.createGain();
+  out.gain.setValueAtTime(0.5, ctx.currentTime);
+  out.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.8);
+  out.connect(ctx.destination);
+  for (let k = 0; k < 70; k++) {
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 900 + Math.random() * 1800;
+    band.Q.value = 1.2;
+    const g = ctx.createGain();
+    g.gain.value = 0.25 + Math.random() * 0.35;
+    src.connect(band).connect(g).connect(out);
+    src.start(ctx.currentTime + Math.random() * 1.5);
+  }
+}

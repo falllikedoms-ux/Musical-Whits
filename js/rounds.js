@@ -2,7 +2,9 @@
 
 const ROUNDS = [
   {
-    id: 'r1', name: 'Name That Tune', type: 'buzz', clipLength: 15,
+    id: 'r1', name: 'Name That Tune', type: 'buzz', clipLength: 15, code: 'A1',
+    blurb: 'A 15-second clip. Name the song, and the artist for a bonus.',
+    payout: [['TITLE', '+10'], ['ARTIST', '+5']],
     rules: [
       'Listen to the clip (up to 15 seconds) and buzz to name the song.',
       'Correct title: +10. Correct artist as well: +5 bonus.',
@@ -15,7 +17,9 @@ const ROUNDS = [
     ],
   },
   {
-    id: 'r2', name: 'Intro Sprint', type: 'sprint', stages: [1, 3, 5], stagePoints: [30, 20, 10], wrongPoints: -5,
+    id: 'r2', name: 'Intro Sprint', type: 'sprint', stages: [1, 3, 5], stagePoints: [30, 20, 10], wrongPoints: -5, code: 'A2',
+    blurb: 'How fast can you name a song from its very first notes?',
+    payout: [['1 SEC', '+30'], ['3 SEC', '+20'], ['5 SEC', '+10'], ['MISS', '-5']],
     rules: [
       'The host plays the intro in stages: 1 second, then 3 seconds, then 5 seconds.',
       'Correct title after 1 second: +30. After 3 seconds: +20. After 5 seconds: +10.',
@@ -23,7 +27,9 @@ const ROUNDS = [
     ],
   },
   {
-    id: 'r3', name: 'Lyric Gap', type: 'buzz',
+    id: 'r3', name: 'Lyric Gap', type: 'buzz', code: 'A3',
+    blurb: 'The music stops. You finish the line.',
+    payout: [['EXACT', '+20'], ['GIST', '+10']],
     rules: [
       'The music stops right before a lyric. Buzz and sing or say the next line.',
       'Exact next line: +20. Mostly right (gist plus key words): +10.',
@@ -36,7 +42,9 @@ const ROUNDS = [
     ],
   },
   {
-    id: 'r4', name: 'Musical Trivia Lightning', type: 'trivia', seconds: 15, points: 10,
+    id: 'r4', name: 'Trivia Lightning', type: 'trivia', seconds: 15, points: 10, code: 'B1',
+    blurb: 'Quick-fire questions. Every team writes, nobody buzzes.',
+    payout: [['RIGHT', '+10']],
     rules: [
       'Rapid-fire questions, no audio and no buzzing.',
       'Every team writes its answer down within 15 seconds.',
@@ -44,7 +52,9 @@ const ROUNDS = [
     ],
   },
   {
-    id: 'r5', name: 'Mashup Mayhem', type: 'buzz',
+    id: 'r5', name: 'Mashup Mayhem', type: 'buzz', code: 'B2',
+    blurb: 'Two songs at once, or one backwards or slowed. Name them.',
+    payout: [['ONE', '+15'], ['BOTH', '+40'], ['STEAL', '+15']],
     rules: [
       'Two songs layered together, or one song played backwards or slowed down.',
       'Both songs correct: +40. One song correct: +15.',
@@ -58,7 +68,9 @@ const ROUNDS = [
     ],
   },
   {
-    id: 'final', name: 'Final Showdown', type: 'final', clipLength: 10,
+    id: 'final', name: 'Final Showdown', type: 'final', clipLength: 10, code: 'B3',
+    blurb: 'One song. One wager. Bet wisely.',
+    payout: [['BOTH', 'WIN'], ['MISS', 'LOSE']],
     rules: [
       'Each team secretly wagers any part of its current score.',
       'One 10-second clip. Write down the song title AND the artist.',
@@ -68,10 +80,10 @@ const ROUNDS = [
 ];
 
 const HOST_LINES = {
-  opening: 'Welcome to Musical Whits, the show where your ears do the thinking! Tonight, our teams will battle through five rounds of tunes, lyrics, and trivia. Fingers on buzzers... let\'s play!',
+  opening: 'Welcome to Musical Wits, the show where your ears do the thinking! Tonight, our teams will battle through five rounds of tunes, lyrics, and trivia. Fingers on buzzers... let\'s play!',
   between: 'Read the scoreboard aloud, then tease the next round with its name and one rule.',
   final: 'It all comes down to this. One song. One wager. Bet wisely.',
-  closing: 'Congratulations to our champions! Thanks for playing Musical Whits!',
+  closing: 'Congratulations to our champions! Thanks for playing Musical Wits!',
 };
 
 function tune(id) { return { kind: 'tune', tune: id }; }

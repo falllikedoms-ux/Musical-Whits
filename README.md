@@ -1,4 +1,4 @@
-# Musical Whits
+# Musical Wits
 
 A musical guessing game show for 2 to 4 teams. One host runs it on a laptop or TV that everyone can see and hear. The full rules are in [docs/musical-guessing-game-show.md](docs/musical-guessing-game-show.md).
 
@@ -12,16 +12,24 @@ GitHub Pages is free for public repositories. For a private repository it needs 
 
 **On a phone or tablet:** downloaded files can't run there, so use an online copy: GitHub Pages above, or the hosted link from the project chat. Teams buzz by tapping their names.
 
+## Install it as an app
+
+**Android:** every change to `main` builds an Android app. Open the [**Android app** release](https://github.com/falllikedoms-ux/Musical-Whits/releases/tag/android-latest) on your phone, download **MusicalWits.apk**, and open it. Android asks once to allow installs from your browser; say yes. Updating works the same way: download the newest APK and open it.
+
+**iPhone (no App Store needed):** open the game's web address in **Safari**, tap **Share** → **Add to Home Screen**. It gets its own icon, opens full screen, and works offline after the first visit. This needs the game on a public https address, such as GitHub Pages above. A real iPhone app file would need a Mac with Xcode, and without a paid Apple developer account it stops opening after 7 days.
+
+The installed apps play as a single-screen game. Phone buzzers for faraway players only work in the claude.ai hosted copy (see below).
+
 ## Hosting a game
 
-1. Type your team names and press **Start the show**.
+1. Press **Drop a coin**, type your team names (or pull the Pun-O-Matic lever for a silly one) and press **Start Round 1**.
 2. Press **Play** (or the space bar) to start a clip.
 3. Teams buzz with their key: **Q**, **P**, **Z** or **M** (or by tapping their name on screen). The music pauses.
 4. The team answers out loud. Press the matching scoring button. A wrong answer locks that team out of the track and the music carries on.
 5. **Reveal answer** if nobody gets it, then **Next track**.
 6. The small **+5 / −5** buttons fix any score at any time.
 
-The game saves itself in the browser, so refreshing the page or closing the tab doesn't lose the scores. Choose **Resume game in progress** on the menu.
+The game saves itself in the browser, so refreshing the page or closing the tab doesn't lose the scores. Tap **Resume the show** on the jukebox.
 
 ## Playing with friends far away
 
@@ -49,7 +57,7 @@ This needs the hosted copy. A downloaded `index.html` plays as a single-screen g
 
 The game ships with placeholder tunes: public-domain melodies (Für Elise, Jingle Bells, Twinkle Twinkle and friends) played by a small synthesizer, so it works straight away.
 
-To use real songs, open **Edit questions and music** from the menu. For each track you can pick:
+To use real songs, tap **Songs** on the jukebox. For each track you can pick:
 
 - **Audio file from my computer** (MP3, WAV, M4A...). The file stays in your browser on that computer; it's never uploaded anywhere.
 - **Web link to an audio file** (a direct link ending in .mp3 or similar).
