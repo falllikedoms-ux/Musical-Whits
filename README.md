@@ -18,7 +18,7 @@ GitHub Pages is free for public repositories. For a private repository it needs 
 
 **iPhone (no App Store needed):** open the game's web address in **Safari**, tap **Share** → **Add to Home Screen**. It gets its own icon, opens full screen, and works offline after the first visit. This needs the game on a public https address, such as GitHub Pages above. A real iPhone app file would need a Mac with Xcode, and without a paid Apple developer account it stops opening after 7 days.
 
-The installed apps play as a single-screen game. Phone buzzers for faraway players only work in the claude.ai hosted copy (see below).
+Phone buzzers work in the installed apps too (see below).
 
 ## Hosting a game
 
@@ -31,16 +31,20 @@ The installed apps play as a single-screen game. Phone buzzers for faraway playe
 
 The game saves itself in the browser, so refreshing the page or closing the tab doesn't lose the scores. Tap **Resume the show** on the jukebox.
 
-## Playing with friends far away
+## Phone buzzers
 
-In the hosted copy of the game on claude.ai, every player can use their own phone (or computer) as a buzzer:
+Every player can buzz from their own phone or computer, Android or iPhone, wherever they are.
 
-1. Share the game with each player from the page's **Share** menu. They need to be signed in to claude.ai.
-2. Each player opens the link and taps **Join as a player** (players who can't edit the game land there straight away), then picks their team.
-3. The host runs the show as usual. When a clip plays, players tap the big **BUZZ** button, or press the space bar on a computer. The first buzz to arrive wins, and the host's screen shows which team buzzed.
-4. Start a video call and share your sound so everyone hears the music.
+**From the GitHub Pages address or the Android app:**
 
-This needs the hosted copy. A downloaded `index.html` plays as a single-screen game.
+1. On the host's screen, tap **Host: open a room** on the jukebox. A 4-letter room code appears.
+2. Each player opens https://falllikedoms-ux.github.io/Musical-Whits/ (or the Android app), types the code under **Play with phones** and taps **Join a room**. Or send them the link the host's screen shows, which joins straight away.
+3. Players pick their team. When a clip plays they tap the big **BUZZ** button. The first buzz wins, and the host's screen shows which team buzzed.
+4. Playing far apart? Start a video call and share your sound so everyone hears the music.
+
+Everyone needs internet. Phones connect straight to the host's screen; PeerJS's free public server only introduces them. Keep the host's screen open: if it refreshes, the same room comes back and phones reconnect by themselves.
+
+**In the claude.ai copy:** share the game from the page's **Share** menu. Players open it, tap **Join as a player** and pick their team. They need to be signed in to claude.ai.
 
 ## Rounds
 

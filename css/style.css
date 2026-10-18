@@ -547,3 +547,13 @@ input.lib-search { margin-top: .6em; }
 }
 .title-sm { font-family: var(--display); font-size: 15px; color: var(--cream); }
 .title-md { font-family: var(--display); font-size: 20px; color: var(--cream); }
+
+/* Room codes for phone buzzers */
+.room-code { display: flex; justify-content: center; margin: 4px 0 10px; }
+.join-row { display: flex; gap: 8px; margin-top: 10px; }
+.room-input {
+  width: 7.5em; flex: none; text-align: center; font-family: var(--display); font-size: 22px; letter-spacing: .2em;
+  text-transform: uppercase; border-radius: 999px; border: 2px solid var(--chrome-border); background: var(--paper); color: var(--text-dark); padding: 0 10px;
+}
+.join-row .btn { flex: 1; }
+.online-card a { color: var(--amber); word-break: break-all; }
