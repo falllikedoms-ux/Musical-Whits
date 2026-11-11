@@ -36,17 +36,11 @@ jobs:
           npx cap sync android
           cp android-src/com/musicalwits/app/*.java android/app/src/main/java/com/musicalwits/app/
 
+      # The icon sizes are kept ready-made in android-src/res, so the build needs no extra tools.
       - name: Use the Musical Wits icon
         run: |
-          command -v convert || (sudo apt-get update && sudo apt-get install -y imagemagick)
-          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
-            name=${d%%:*}; size=${d##*:}
-            dir=android/app/src/main/res/mipmap-$name
-            rm -f $dir/ic_launcher*.webp
-            convert icons/icon-512.png -resize ${size}x${size} $dir/ic_launcher.png
-            convert icons/icon-512.png -resize ${size}x${size} $dir/ic_launcher_round.png
-            convert icons/icon-maskable-512.png -resize $((size * 9 / 4))x$((size * 9 / 4)) $dir/ic_launcher_foreground.png
-          done
+          rm -f android/app/src/main/res/mipmap-*/ic_launcher*.webp
+          cp -r android-src/res/. android/app/src/main/res/
           sed -i 's/>#[0-9A-Fa-f]*</>#0B0D1A</' android/app/src/main/res/values/ic_launcher_background.xml || true
 
       - name: Build the APK
