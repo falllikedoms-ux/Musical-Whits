@@ -1,129 +1,129 @@
-// The rounds and scoring from docs/musical-guessing-game-show.md.
+// The rounds of the show. Every track is one question with four choices, and the
+// game checks the answer itself against the song's own artist and title.
+//   ask: 'artist' (who performs it) or 'title' (what the song is called)
+//   bonus: a title round, which can be switched off under Game options
+//   share: how big a slice of the songs this round gets, next to the others
 
 const ROUNDS = [
   {
-    id: 'r1', name: 'Name That Tune', type: 'buzz', clipLength: 15, code: 'A1',
-    blurb: 'A 15-second clip. Name the song, and the artist for a bonus.',
-    payout: [['TITLE', '+10'], ['ARTIST', '+5']],
+    id: 'a1', name: 'Name the Artist', ask: 'artist', clipLength: 15, points: 10, code: 'A1', share: 1,
+    blurb: 'A 15-second clip. Who is that singing?',
     rules: [
-      'Listen to the clip (up to 15 seconds) and buzz to name the song.',
-      'Correct title: +10. Correct artist as well: +5 bonus.',
-      'No penalty for wrong answers in the warm-up, but you are locked out of that track.',
-    ],
-    options: [
-      { label: 'Title + artist', points: 15, kind: 'correct' },
-      { label: 'Title only', points: 10, kind: 'correct' },
-      { label: 'Wrong', points: 0, kind: 'wrong' },
+      'A 15-second clip plays. Pick the artist from four choices.',
+      'Right answer: +10. With phones, answering fast adds up to +5 more.',
+      'A wrong answer scores nothing, so have a guess.',
     ],
   },
   {
-    id: 'r2', name: 'Intro Sprint', type: 'sprint', stages: [1, 3, 5], stagePoints: [30, 20, 10], wrongPoints: -5, code: 'A2',
-    blurb: 'How fast can you name a song from its very first notes?',
-    payout: [['1 SEC', '+30'], ['3 SEC', '+20'], ['5 SEC', '+10'], ['MISS', '-5']],
+    id: 't1', name: 'Title Bonus', ask: 'title', bonus: true, clipLength: 15, points: 15, code: 'A2', share: 0.6,
+    blurb: 'Bonus round. This time, name the song.',
     rules: [
-      'The host plays the intro in stages: 1 second, then 3 seconds, then 5 seconds.',
-      'Correct title after 1 second: +30. After 3 seconds: +20. After 5 seconds: +10.',
-      'Wrong answer: -5, and you are locked out of that track.',
+      'A bonus round: pick the song title from four choices.',
+      'Right answer: +15. With phones, answering fast adds up to +7 more.',
     ],
   },
   {
-    id: 'r3', name: 'Lyric Gap', type: 'buzz', code: 'A3',
-    blurb: 'The music stops. You finish the line.',
-    payout: [['EXACT', '+20'], ['GIST', '+10']],
+    id: 'a2', name: 'Quick Fire', ask: 'artist', clipLength: 5, points: 20, code: 'B1', share: 1,
+    blurb: 'Only 5 seconds of music. Name the artist, quick.',
     rules: [
-      'The music stops right before a lyric. Buzz and sing or say the next line.',
-      'Exact next line: +20. Mostly right (gist plus key words): +10.',
-      'Wrong: 0, and you are locked out of that track.',
-    ],
-    options: [
-      { label: 'Exact line', points: 20, kind: 'correct' },
-      { label: 'Mostly right', points: 10, kind: 'correct' },
-      { label: 'Wrong', points: 0, kind: 'wrong' },
+      'Just 5 seconds of each song. Pick the artist.',
+      'Right answer: +20. With phones, answering fast adds up to +10 more.',
     ],
   },
   {
-    id: 'r4', name: 'Trivia Lightning', type: 'trivia', seconds: 15, points: 10, code: 'B1',
-    blurb: 'Quick-fire questions. Every team writes, nobody buzzes.',
-    payout: [['RIGHT', '+10']],
+    id: 't2', name: 'Double Title Bonus', ask: 'title', bonus: true, clipLength: 8, points: 25, code: 'B2', share: 0.6,
+    blurb: 'Bonus round. Shorter clips, bigger points. Name the song.',
     rules: [
-      'Rapid-fire questions, no audio and no buzzing.',
-      'Every team writes its answer down within 15 seconds.',
-      '+10 for every correct answer.',
+      'A bonus round with 8-second clips: pick the song title.',
+      'Right answer: +25. With phones, answering fast adds up to +12 more.',
     ],
   },
   {
-    id: 'r5', name: 'Mashup Mayhem', type: 'buzz', code: 'B2',
-    blurb: 'Two songs at once, or one backwards or slowed. Name them.',
-    payout: [['ONE', '+15'], ['BOTH', '+40'], ['STEAL', '+15']],
+    id: 'final', name: 'The Encore', ask: 'artist', final: true, clipLength: 10, points: 40, code: 'B3', share: 0.4,
+    blurb: 'The last few songs are worth the most. Anyone can still win.',
     rules: [
-      'Two songs layered together, or one song played backwards or slowed down.',
-      'Both songs correct: +40. One song correct: +15.',
-      'Steal: if a team gets only one, the other teams can buzz to name the second for +15.',
-    ],
-    options: [
-      { label: 'Both songs', points: 40, kind: 'correct' },
-      { label: 'One song (others may steal)', points: 15, kind: 'partial' },
-      { label: 'Steal (second song)', points: 15, kind: 'correct' },
-      { label: 'Wrong', points: 0, kind: 'wrong' },
-    ],
-  },
-  {
-    id: 'final', name: 'Final Showdown', type: 'final', clipLength: 10, code: 'B3',
-    blurb: 'One song. One wager. Bet wisely.',
-    payout: [['BOTH', 'WIN'], ['MISS', 'LOSE']],
-    rules: [
-      'Each team secretly wagers any part of its current score.',
-      'One 10-second clip. Write down the song title AND the artist.',
-      'Both correct: win the wager. Anything wrong: lose the wager.',
+      'The last few songs, with 10-second clips. Pick the artist.',
+      'Right answer: +40. With phones, answering fast adds up to +20 more.',
+      'Highest score after the Encore wins.',
     ],
   },
 ];
 
 const HOST_LINES = {
-  opening: 'Welcome to Musical Wits, the show where your ears do the thinking! Tonight, our teams will battle through five rounds of tunes, lyrics, and trivia. Fingers on buzzers... let\'s play!',
-  between: 'Read the scoreboard aloud, then tease the next round with its name and one rule.',
-  final: 'It all comes down to this. One song. One wager. Bet wisely.',
+  opening: 'Welcome to Musical Wits, the show where your ears do the thinking! Listen close, pick the artist, and may the best ears win.',
+  final: 'It all comes down to the Encore. Big points on every song.',
   closing: 'Congratulations to our champions! Thanks for playing Musical Wits!',
 };
 
-function tune(id) { return { kind: 'tune', tune: id }; }
+// The most a fast answer adds on top of a round's points when everyone plays on phones.
+function speedBonus(r) { return Math.floor(r.points / 2); }
 
-// The starter pack: placeholder tunes so the game works straight away.
-// Hosts replace these with their own songs in "Edit questions".
-function demoPack() {
-  const song = (id, extra = {}) => ({ title: TUNES[id].name, artist: TUNES[id].artist, audio: tune(id), start: 0, ...extra });
-  const lyric = (id, phrases, before, next) => song(id, { stopAt: +tunePhraseEnd(id, phrases).toFixed(2), before, next });
-  return {
-    r1: ['odeToJoy', 'furElise', 'mountainKing', 'turkishMarch', 'greensleeves'].map((id) => song(id)),
-    r2: ['happyBirthday', 'jingleBells', 'oldMacDonald', 'frereJacques', 'ohSusanna'].map((id) => song(id)),
-    r3: [
-      lyric('twinkle', 1, 'Twinkle, twinkle, little star...', 'How I wonder what you are'),
-      lyric('amazingGrace', 1, 'Amazing grace, how sweet the sound...', 'That saved a wretch like me'),
-      lyric('auldLangSyne', 2, 'Should auld acquaintance be forgot...', 'And never brought to mind'),
-      lyric('londonBridge', 1, 'London Bridge is falling down...', 'Falling down, falling down'),
-      lyric('saints', 3, 'Oh when the saints go marching in...', 'Oh Lord, I want to be in that number'),
-      lyric('maryLamb', 2, 'Mary had a little lamb, little lamb, little lamb...', 'Mary had a little lamb, its fleece was white as snow'),
-    ],
-    r4: [
-      { question: 'Which band released the album Abbey Road?', answer: 'The Beatles' },
-      { question: 'What instrument has 88 keys?', answer: 'The piano' },
-      { question: 'Which artist is known as the "Queen of Pop"?', answer: 'Madonna' },
-      { question: 'Bohemian Rhapsody was released in which decade?', answer: 'The 1970s (1975)' },
-      { question: 'What do you call a group of eight musicians?', answer: 'An octet' },
-      { question: 'How many strings does a standard guitar have?', answer: 'Six' },
-      { question: 'Which composer kept writing music after losing his hearing, including the Ninth Symphony?', answer: 'Ludwig van Beethoven' },
-      { question: 'What does "forte" mean in sheet music?', answer: 'Loud' },
-      { question: 'What is the best-selling album of all time?', answer: 'Thriller by Michael Jackson' },
-      { question: 'How many lines are on a musical staff?', answer: 'Five' },
-    ],
-    r5: [
-      { mode: 'layer', title: TUNES.rowYourBoat.name, artist: 'Traditional', audio: tune('rowYourBoat'), title2: TUNES.scarborough.name, artist2: 'Traditional', audio2: tune('scarborough'), start: 0 },
-      { mode: 'layer', title: TUNES.maryLamb.name, artist: 'Traditional', audio: tune('maryLamb'), title2: TUNES.odeToJoy.name, artist2: 'Beethoven', audio2: tune('odeToJoy'), start: 0 },
-      { mode: 'reverse', title: TUNES.twinkle.name, artist: 'Traditional', audio: tune('twinkle'), start: 0 },
-      { mode: 'slow', title: TUNES.jingleBells.name, artist: TUNES.jingleBells.artist, audio: tune('jingleBells'), start: 0 },
-    ],
-    final: [
-      { category: 'Classical Hits', ...song('eineKleine') },
-    ],
+// Used to fill out the four choices when the library has too few different artists or titles.
+const SPARE_ARTISTS = [
+  'The Beatles', 'Queen', 'Madonna', 'Prince', 'ABBA', 'Elvis Presley', 'Stevie Wonder', 'Fleetwood Mac',
+  'Whitney Houston', 'David Bowie', 'Aretha Franklin', 'The Rolling Stones', 'Dolly Parton', 'Bob Marley',
+  'Elton John', 'Tina Turner', 'Michael Jackson', 'Nirvana', 'Bee Gees', 'Johnny Cash',
+];
+const SPARE_TITLES = [
+  'Midnight Train', 'Dancing in the Rain', 'Summer Nights', 'Heart of Gold', 'One More Time', 'Blue Skies',
+  'Take Me Home', 'Fire and Ice', 'Good Vibrations', 'Stand by Me', 'Yesterday', 'River Deep',
+];
+
+// With no songs added yet the game plays these built-in tunes, so it works straight away.
+function demoSongs() {
+  return Object.keys(TUNES).map((id) => ({ title: TUNES[id].name, artist: TUNES[id].artist === 'Traditional' ? '' : TUNES[id].artist, audio: { kind: 'tune', tune: id } }));
+}
+
+function sameText(a, b) { return String(a).trim().toLowerCase() === String(b).trim().toLowerCase(); }
+
+function shuffle(list) {
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+// Four choices for one song: the right answer plus three wrong ones taken from the other songs.
+function makeChoices(song, ask, pool) {
+  const right = song[ask];
+  const wrong = [];
+  const add = (text) => {
+    if (wrong.length < 3 && text && !sameText(text, right) && !wrong.some((w) => sameText(w, text))) wrong.push(text);
   };
+  // For titles, one other song by the same artist makes it a fairer test.
+  if (ask === 'title') shuffle(pool.filter((s) => s !== song && sameText(s.artist, song.artist))).slice(0, 1).forEach((s) => add(s.title));
+  shuffle(pool.slice()).forEach((s) => add(s[ask]));
+  shuffle((ask === 'artist' ? SPARE_ARTISTS : SPARE_TITLES).slice()).forEach(add);
+  const choices = shuffle([right, ...wrong]);
+  return { choices, correct: choices.indexOf(right) };
+}
+
+// Deals a fresh show from the songs: each song is used once at most.
+// Songs with no artist can only go in the title rounds.
+function dealRounds(songs, opts) {
+  const rounds = ROUNDS.filter((r) => opts.titleBonus || !r.bonus);
+  const per = opts.perRound || 8;
+  const target = {};
+  const out = {};
+  rounds.forEach((r) => { target[r.id] = Math.max(1, Math.round(per * r.share)); out[r.id] = []; });
+  const deck = shuffle(songs.filter((s) => s.title || s.artist));
+  const withArtist = deck.filter((s) => s.artist);
+  const titleOnly = deck.filter((s) => !s.artist && s.title);
+  const take = (r) => {
+    const from = r.ask === 'title' && titleOnly.length ? titleOnly : withArtist;
+    const song = from.pop();
+    if (!song || (r.ask === 'title' && !song.title)) return false;
+    out[r.id].push({ title: song.title, artist: song.artist, audio: song.audio, ask: r.ask, ...makeChoices(song, r.ask, deck) });
+    return true;
+  };
+  // Go round the table so a small library still gives every round something.
+  let dealt = true;
+  while (dealt) {
+    dealt = false;
+    for (const r of rounds) {
+      if (out[r.id].length < target[r.id] && take(r)) dealt = true;
+    }
+  }
+  return out;
 }

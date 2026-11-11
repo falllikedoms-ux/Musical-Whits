@@ -1,6 +1,6 @@
 // Keeps a copy of the game on the phone so the installed app opens without internet.
 // Bump VERSION whenever the game's files change, so phones fetch the new copy.
-const VERSION = 'musical-wits-v2';
+const VERSION = 'musical-wits-v3';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest',
   'css/style.css', 'fonts/fonts.css', 'fonts/dm-sans.woff2', 'fonts/monoton.woff2', 'fonts/righteous.woff2',

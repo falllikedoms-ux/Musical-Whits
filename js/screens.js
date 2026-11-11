@@ -1,7 +1,6 @@
 // The game-show screens, drawn in the "Midnight Lacquer" style from the design handoff:
 // the jukebox home screen, contestant podiums, the applause sign and payout board,
-// the 8-track and buzzer, the Hit Parade scoreboard, the tuning-dial wager and the
-// Platinum Record finale. Game state and scoring live in app.js.
+// the 8-track and the answer keys, the Hit Parade scoreboard and the Platinum Record finale. Game state and scoring live in app.js.
 
 const ICONS = {
   play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>',
@@ -70,25 +69,31 @@ function dome(kicker, title, blurb, tag = 'h2') {
   </div></div></div>`;
 }
 
-function roundNumber(r) { return ROUNDS.indexOf(r) + 1; }
+function roundNumber(r) { return activeRounds().indexOf(r) + 1; }
 
 // ---------- home: the jukebox ----------
 
 function renderHome() {
   const resume = game && game.phase !== 'end'
     ? '<button class="btn btn-secondary" data-action="resume">Resume the show</button>' : '';
-  const cards = ROUNDS.map((r, i) => `
+  const rounds = plannedRounds();
+  const cards = rounds.map((r, i) => `
     <button class="song-card" style="--band:${BANDS[i % 3]}" data-action="round-info" data-round="${r.id}">
       <span class="code">${r.code}</span><span class="name">${esc(r.name)}</span>
     </button>`).join('');
+  const n = library.length;
+  const status = n
+    ? `<span class="dot on"></span><span>Playing from your music: <b>${n} song${n === 1 ? '' : 's'}</b></span>`
+    : '<span class="dot"></span><span>No songs added yet, so the game plays its demo tunes. Tap here to add your music.</span>';
   return `
   <main class="home">
     <div class="cabinet">
-      ${dome('', 'Musical<br>Wits', '', 'h1').replace('</h1>', '</h1><div class="tagline">Your ears do the thinking</div>')}
+      ${dome('', 'Musical<br>Wits', '', 'h1').replace('</h1>', '</h1><div class="tagline">Name that artist</div>')}
       <div class="chrome-rule thick" aria-hidden="true"></div>
       ${glassPanel(`
-        <div class="glass-head"><div class="title-sm">Tonight's selections</div><span class="label">${ROUNDS.length} rounds</span></div>
-        <div class="selections">${cards}</div>`)}
+        <div class="glass-head"><div class="title-sm">Tonight's selections</div><span class="label">${rounds.length} rounds</span></div>
+        <div class="selections">${cards}</div>
+        <button class="lib-status" data-action="open-editor">${status}</button>`)}
       <div class="grille">
         <div class="grille-bars" aria-hidden="true">${'<span></span>'.repeat(6)}</div>
         <button class="btn btn-neon coin-btn" data-action="open-teams">${icon('coin')} Drop a coin</button>
@@ -124,7 +129,7 @@ function renderTeams() {
         <div class="num" aria-hidden="true">${i + 1}</div>
         ${flaps(null, 0, 3)}
       </div>
-      <div class="key">BUZZ KEY ${TEAM_KEYS[i]}</div>
+      <div class="key">KEY ${TEAM_KEYS[i]}</div>
     </div>`).join('');
   const k = setup.punIdx;
   const pun = (d) => PUN_NAMES[(k + d + PUN_NAMES.length) % PUN_NAMES.length];
@@ -146,16 +151,17 @@ function renderTeams() {
         <span class="knob"></span><span class="shaft"></span><span class="base"></span>
       </button>`, 'punomatic')}
     ${setup.count < 4 ? `<button class="dashed-btn" data-action="add-team">+ Add Team ${setup.count + 1}</button>` : ''}
-    <div class="glass-frame"><details class="glass options">
+    <div class="glass-frame"><details class="glass options" open>
       <summary>Game options</summary>
-      <label class="check"><input type="checkbox" data-action="no-negative" ${setup.noNegative ? 'checked' : ''}> Kids' edition: no negative points</label>
+      <label class="check"><input type="checkbox" data-setting="titleBonus" ${settings.titleBonus ? 'checked' : ''}> Add bonus rounds for naming the song title</label>
       <label class="check"><input type="checkbox" data-setting="randomStart" ${settings.randomStart ? 'checked' : ''}> Start each clip at a random point in the song</label>
-      <p class="hint check-hint">For Name That Tune, Mashup Mayhem and the Final. Intro Sprint and Lyric Gap keep their set start.</p>
-      <label class="check"><input type="checkbox" data-setting="useLibrary" ${settings.useLibrary && lib ? 'checked' : ''} ${lib ? '' : 'disabled'}> Pick songs at random from my music library${lib ? ` (${lib} song${lib === 1 ? '' : 's'})` : ''}</label>
-      ${lib ? '' : '<p class="hint check-hint">Add your songs under <b>Songs</b> on the jukebox first.</p>'}
+      <label class="check select">Songs in each main round
+        <select data-setting="perRound">${[5, 8, 10, 15].map((v) => `<option value="${v}" ${settings.perRound === v ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      </label>
+      <p class="hint check-hint">${lib ? `Songs come from your music library (${lib} song${lib === 1 ? '' : 's'}).` : 'No songs added yet, so this game uses the demo tunes. Add your music under <b>Songs</b> on the jukebox.'}</p>
     </details></div>
     <div class="bottom">
-      <button class="btn btn-primary btn-wide" data-action="new-game">Start Round 1</button>
+      <button class="btn btn-primary btn-wide" data-action="new-game">Start the show</button>
     </div>
   </main>`;
 }
@@ -196,7 +202,7 @@ function reducedMotion() {
 // ---------- how to play ----------
 
 function renderHowTo() {
-  const cards = ROUNDS.map((r, i) => `
+  const cards = plannedRounds().map((r, i) => `
     <div class="paper-card rule-card" style="border-top:6px solid ${BANDS[i % 3]}">
       <div class="code">${r.code}</div><div class="title">${esc(r.name)}</div>
       <ul class="rules">${r.rules.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
@@ -204,14 +210,22 @@ function renderHowTo() {
   return `
   <main class="screen">
     ${topbar('How to play', { actions: `<button class="icon-btn" data-action="home" aria-label="Back to the jukebox">${icon('back')}</button>` })}
-    ${dome('', 'How to<br>play', 'One host, 2 to 4 teams, five rounds and a Final Showdown.')}
+    ${dome('', 'How to<br>play', 'Hear a song, name the artist. The game checks every answer itself, so everyone plays.')}
     <div class="paper-card rule-card" style="border-top:6px solid var(--amber)">
-      <div class="code">House rules</div><div class="title">Buzz before you answer</div>
+      <div class="code">Playing on phones</div><div class="title">Everyone answers at once</div>
       <ul class="rules">
-        <li>One answer per buzz. A wrong answer locks that team out of the track, and the music carries on.</li>
-        <li>Teams buzz with a key (${TEAM_KEYS.map((key, i) => `${key} for team ${i + 1}`).join(', ')}), by tapping their name, or from their own phone.</li>
-        <li>The host may accept a close-enough answer. The host's ruling is final.</li>
-        <li>Highest score after the Final Showdown wins.</li>
+        <li>Open a room on the jukebox screen and have each player join on their own phone and pick a team.</li>
+        <li>When the music starts, four choices appear on every phone. Tap yours before the timer runs out.</li>
+        <li>A right answer scores the round's points, plus a bonus for answering fast.</li>
+        <li>Playing on the main screen too? Tap your team there, then tap your answer.</li>
+      </ul>
+    </div>
+    <div class="paper-card rule-card" style="border-top:6px solid var(--pink)">
+      <div class="code">Playing on one screen</div><div class="title">Buzz, then pick</div>
+      <ul class="rules">
+        <li>Know it? Tap your team's name to buzz (or press ${TEAM_KEYS.map((key, i) => `${key} for team ${i + 1}`).join(', ')}). The music stops.</li>
+        <li>Pick the answer from the four choices. Right scores the points.</li>
+        <li>Wrong and your team is out for that track, that choice is crossed off, and the music carries on for the others.</li>
       </ul>
     </div>
     ${cards}
@@ -223,10 +237,9 @@ function renderHowTo() {
 
 function gameTopbar(chip, pink) {
   const actions = `
-    <span id="online-count" class="online-count"></span>
     ${game.phase !== 'end' ? `<button class="icon-btn" data-action="skip-round" aria-label="Skip round" title="Skip round">${icon('skip')}</button>` : ''}
     <button class="icon-btn" data-action="home" aria-label="Menu" title="Menu">${icon('menu')}</button>`;
-  return topbar(chip, { pink, actions });
+  return topbar(chip, { pink, actions }) + '<div id="online-count" class="online-count"></div>';
 }
 
 function renderGame() {
@@ -234,37 +247,41 @@ function renderGame() {
   const r = round();
   if (game.phase === 'intro') return renderIntro(r);
   if (game.phase === 'roundEnd') return renderRoundEnd(r);
-  if (r.type === 'trivia') return renderTrivia(r);
-  if (r.type === 'final') return renderFinal(r);
-  return renderBuzzItem(r);
+  return renderItem(r);
 }
 
 // Round intro: the applause sign, the dome and the payout board.
 let lastApplause = null;
 function renderIntro(r) {
   const n = items().length;
-  const first = ROUNDS.slice(0, game.r).every((x) => !roundItems(x.id).length);
-  const line = first ? HOST_LINES.opening : r.type === 'final' ? HOST_LINES.final : null;
-  const noun = r.type === 'trivia' ? 'question' : 'track';
-  const payout = r.payout.filter(([, v]) => !(game.noNegative && v.startsWith('-')));
+  const rounds = activeRounds();
+  const first = rounds[0] === r;
+  const line = first ? HOST_LINES.opening : r.final ? HOST_LINES.final : null;
+  const phones = window.Online && Online.phoneCount() > 0;
+  const payout = [['RIGHT', '+' + r.points]];
+  if (phones) payout.push(['FAST', '+' + speedBonus(r)]);
   const rows = payout.map(([label, value]) => `
     <div class="payout-row">
       ${flaps(null, label, 6, '', 'mid')}
-      ${flaps(null, value, Math.max(3, value.length), '', value.startsWith('-') || value === 'LOSE' ? 'pink' : 'amber')}
+      ${flaps(null, value, Math.max(3, value.length), '', 'amber')}
     </div>`).join('');
-  const key = game.r + ':' + (game.roundStart || []).join(',');
+  const key = game.id + ':' + game.r;
   if (lastApplause !== key) { lastApplause = key; setTimeout(() => playApplause(), 50); }
-  const isFinal = r.type === 'final';
+  const how = phones
+    ? 'Everyone answers on their own phone. Quick answers score extra.'
+    : 'Tap your team to buzz in, then pick the answer.';
   return `
-  <main class="screen ${isFinal ? 'final-stage' : ''}">
-    ${gameTopbar(isFinal ? 'Finale' : `Round ${roundNumber(r)} of ${ROUNDS.length - 1}`, isFinal)}
+  <main class="screen ${r.final ? 'final-stage' : ''}">
+    ${gameTopbar(r.final ? 'Finale' : `Round ${roundNumber(r)} of ${rounds.length}`, r.final)}
     <div class="applause-frame"><div class="applause">${bulbs(9)}<div class="applause-word">APPLAUSE</div>${bulbs(9)}</div></div>
-    ${dome(isFinal ? 'The finale' : `Round ${roundNumber(r)}`, esc(r.name), r.blurb)}
+    ${dome(r.final ? 'The finale' : r.bonus ? 'Bonus round' : `Round ${roundNumber(r)}`, esc(r.name), r.blurb)}
     ${glassPanel(`
-      <div class="glass-head"><span class="label amber">The payout</span><span class="label">${n} ${noun}${n === 1 ? '' : 's'}</span></div>
-      ${rows}`)}
-    ${line ? `<p class="host-line"><b>HOST SAYS</b>“${esc(line)}”</p>` : ''}
-    <div class="bottom"><button class="btn btn-primary btn-wide" data-action="start-round">${isFinal ? 'Open the envelope' : 'Cue the music'}</button></div>
+      <div class="glass-head"><span class="label amber">The payout</span><span class="label">${n} song${n === 1 ? '' : 's'}</span></div>
+      ${rows}
+      <p class="payout-how">${how}</p>`)}
+    ${line ? `<p class="host-line">“${esc(line)}”</p>` : ''}
+    ${game.demo && first ? '<p class="status-line">Playing the demo tunes. Add your own music under Songs.</p>' : ''}
+    <div class="bottom"><button class="btn btn-primary btn-wide" data-action="start-round">Cue the music</button></div>
   </main>`;
 }
 
@@ -296,24 +313,53 @@ function transport() {
   </div>`;
 }
 
-function stageLamps(r, st) {
-  return `<div class="lamps" role="group" aria-label="Clip stage">${r.stages.map((s, k) => {
-    const cls = st.stage === k + 1 ? 'live' : st.stage > k + 1 ? 'done' : 'next';
-    return `<button class="lamp-btn ${cls}" data-action="stage" data-stage="${k}" ${k > st.stage || st.done ? 'disabled' : ''} aria-label="Play ${s} second${s === 1 ? '' : 's'}">
-      <span class="lamp"></span><span class="txt">${s} SEC</span></button>`;
+// The four answer keys, lettered like a jukebox's selection buttons. Shared with the phone screen.
+//   o.attr     - the data attribute a tap is reported on
+//   o.correct  - index of the right answer, once it is revealed
+//   o.picked   - index this team picked;  o.struck - choices already ruled out
+let keysShown = null;
+function choiceKeys(choices, o = {}) {
+  // The keys slide in once per song, not every time the screen redraws.
+  const fresh = o.id !== keysShown;
+  keysShown = o.id;
+  return `<div class="choices ${fresh ? 'fresh' : ''}">${choices.map((text, c) => {
+    const struck = (o.struck || []).includes(c);
+    const cls = [
+      o.correct === c ? 'correct' : '',
+      o.picked === c ? 'picked' : '',
+      struck || (o.correct != null && o.correct !== c) ? 'out' : '',
+    ].join(' ');
+    return `<button class="choice ${cls}" ${o.attr}="choice" data-choice="${c}" ${o.disabled || struck ? 'disabled' : ''}>
+      <span class="key" aria-hidden="true">${CHOICE_KEYS[c]}</span><span class="txt">${esc(text)}</span>
+    </button>`;
   }).join('')}</div>`;
 }
 
-function contestantButton(i, st, opts = {}) {
+function contestantButton(i, st) {
   const t = game.teams[i];
-  const locked = (st.locked || []).includes(i);
+  const a = st.answers[i];
+  const locked = st.locked.includes(i);
   const answering = st.buzzed === i;
-  const note = opts.note || (locked ? 'LOCKED OUT' : answering ? 'ANSWERING' : `READY · ${TEAM_KEYS[i]}`);
-  const flash = game.flash && game.flash.team === i && Date.now() - game.flash.at < 1500
-    ? `<span class="flash ${game.flash.pts < 0 ? 'down' : ''}">${signed(game.flash.pts)}</span>` : '';
-  const disabled = opts.disabled !== undefined ? opts.disabled : locked || st.done || (st.buzzed !== null && st.buzzed !== undefined && !answering);
-  const cls = [opts.on ? 'on' : '', locked ? 'locked' : '', answering ? 'answering' : ''].join(' ');
-  return `<button class="contestant team-${i} ${cls}" data-action="${opts.action || 'buzz'}" data-team="${i}" ${disabled ? 'disabled' : ''} aria-label="${esc(t.name)}, ${note.toLowerCase()}">
+  const onScreen = st.mode === 'all' && game.screenTeam === i && !st.done && !a;
+  let note;
+  let disabled;
+  if (st.done) {
+    note = a ? (a.pts ? `RIGHT ${signed(a.pts)}` : 'WRONG') : 'NO ANSWER';
+    disabled = true;
+  } else if (st.mode === 'all') {
+    note = a ? 'LOCKED IN' : onScreen ? 'ANSWERING HERE' : window.Online && Online.teamHasPhone(i) ? 'ON PHONE' : 'TAP TO ANSWER';
+    disabled = !!a;
+  } else {
+    note = locked ? 'OUT' : answering ? 'ANSWERING' : `BUZZ · ${TEAM_KEYS[i]}`;
+    disabled = locked || (st.buzzed !== null && !answering);
+  }
+  const f = game.flash && Date.now() - game.flash.at < 1500 ? game.flash.pts[i] : 0;
+  const flash = f ? `<span class="flash ${f < 0 ? 'down' : ''}">${signed(f)}</span>` : '';
+  const cls = [
+    locked && !st.done ? 'locked' : '', answering || onScreen ? 'answering' : '',
+    st.done ? (a && a.pts ? 'right' : 'missed') : a && st.mode === 'all' ? 'in' : '',
+  ].join(' ');
+  return `<button class="contestant team-${i} ${cls}" data-action="team" data-team="${i}" ${disabled ? 'disabled' : ''} aria-label="${esc(t.name)}, ${note.toLowerCase()}">
     ${esc(t.name)}<span class="score">${t.score} pts</span><span class="note">${note}</span>${flash}
   </button>`;
 }
@@ -329,195 +375,71 @@ function adjustPanel() {
   </details>`;
 }
 
-function renderBuzzItem(r) {
+const ASK_LINES = { artist: 'Who\'s the artist?', title: 'What\'s the song called?' };
+
+function renderItem(r) {
   const it = item();
   const st = game.item;
   const n = items().length;
-  const sprint = r.type === 'sprint';
-  let clue = '';
-  if (r.id === 'r3' && it.before) clue = `<div class="clue"><div class="label">Finish the line</div><div class="line">“${esc(it.before)}”</div></div>`;
-  if (r.id === 'r5') clue = `<div class="clue"><div class="label">${esc(MASHUP_MODES[it.mode] || 'Mashup')}</div><div class="line">${it.mode === 'layer' ? 'Name both songs' : 'Name the song'}</div></div>`;
+  const all = st.mode === 'all';
+  const started = st.startedAt !== null;
+  const answered = Object.keys(st.answers).length;
 
-  const opts = optionsFor(r, it, st);
-  const best = Math.max(...opts.map((o) => o.points));
-  const worth = sprint
-    ? `<div class="worth"><span class="label">Worth right now</span><span class="pts">${signed(r.stagePoints[Math.max(0, st.stage - 1)])}</span></div>`
-    : `<div class="worth"><span class="label">${st.partial ? 'Steal is on' : 'Worth up to'}</span><span class="pts">${signed(best)}</span></div>`;
-
-  const picking = st.buzzed === null && st.picking;
-  const buzzedOn = st.buzzed !== null || picking;
-  const prompt = st.buzzed !== null ? 'Answering now' : picking ? 'Who buzzed first?' : 'Contestants';
-  const open = game.teams.map((t, i) => i).filter((i) => !st.locked.includes(i));
-
-  let host;
-  if (st.buzzed !== null) {
-    host = `<div class="judge">${opts.map((o) => {
-      const pts = game.noNegative && o.points < 0 ? 0 : o.points;
-      return `<button class="btn ${o.kind === 'wrong' ? 'btn-wrong' : 'btn-right'}" data-action="judge" data-kind="${o.kind}" data-points="${o.points}">${esc(o.label)} <span class="pts">${signed(pts)}</span></button>`;
-    }).join('')}</div>`;
-  } else if (st.revealed) {
-    host = `<div class="answer">${answerText(r.id, it)}</div>
-      <button class="btn btn-primary btn-wide" data-action="next-item">${game.i + 1 < n ? 'Next track' : 'Finish the round'}</button>`;
+  let prompt;
+  if (st.done) prompt = '';
+  else if (all) {
+    prompt = !started ? 'Get ready...'
+      : game.screenTeam !== null && !st.answers[game.screenTeam] ? `${esc(game.teams[game.screenTeam].name)}, tap your answer`
+        : 'Answer on your phone. Playing on this screen? Tap your team.';
   } else {
-    const status = !open.length ? '<p class="status-line">Everyone is locked out. Reveal the answer.</p>' : '';
-    host = `${status}<div class="row split" style="margin-top:0">
-      <button class="btn btn-ghost" data-action="reveal">Reveal answer</button>
-      <button class="btn btn-ghost" data-action="next-item">${game.i + 1 < n ? 'Skip track' : 'Finish round'}</button>
-    </div>`;
+    prompt = st.buzzed !== null ? `${esc(game.teams[st.buzzed].name)}, pick your answer`
+      : st.struck.length ? 'Not that one. Anyone else? Tap your team to buzz.'
+        : 'Know it? Tap your team to buzz.';
   }
 
+  const timer = all && !st.done ? `
+    <div class="answer-timer" role="timer" aria-label="Time left to answer">
+      <div class="track"><div class="fill" id="answer-fill" style="width:${(answerTimeLeft() / answerWindowMs(r)) * 100}%"></div></div>
+      <span class="num"><span id="answer-left">${Math.ceil(answerTimeLeft() / 1000)}</span>s</span>
+      <span class="count">${answered} of ${game.teams.length} in</span>
+    </div>` : '';
+
+  const showKeys = st.done || (all ? started : st.buzzed !== null || st.struck.length > 0);
+  const keys = showKeys ? choiceKeys(it.choices, {
+    id: itemKey() + st.done,
+    attr: 'data-action',
+    correct: st.done ? it.correct : null,
+    struck: st.struck,
+    disabled: st.done || (!all && st.buzzed === null),
+  }) : '';
+
+  const reveal = st.done ? `
+    <div class="answer">
+      <div class="label">${it.ask === 'artist' ? 'The artist' : 'The song'}</div>
+      <div class="answer-line">${esc(it.ask === 'artist' ? it.artist : it.title)}</div>
+      <div class="answer-sub">${it.ask === 'artist' ? `“${esc(it.title)}”` : it.artist ? `by ${esc(it.artist)}` : ''}</div>
+    </div>` : '';
+
+  const bottom = st.done
+    ? `<button class="btn btn-primary btn-wide" data-action="next-item">${game.i + 1 < n ? 'Next song' : r.final ? 'Crown the champions' : 'Finish the round'}</button>`
+    : `<div class="row split" style="margin-top:0">
+        <button class="btn btn-ghost" data-action="reveal">${all && answered ? 'Lock answers now' : 'Reveal answer'}</button>
+        <button class="btn btn-ghost" data-action="next-item">${game.i + 1 < n ? 'Skip song' : 'Skip to the end'}</button>
+      </div>`;
+
   return `
-  <main class="screen">
-    ${gameTopbar(`Track ${game.i + 1} / ${n}`)}
-    ${cartridge(`Stereo 8 · Round ${roundNumber(r)}`, r.name, `${r.code.replace(/\d/, '')}${game.i + 1}<br>Mystery Track`, sprint ? stageLamps(r, st) : transport())}
-    ${clue}
-    ${st.done ? '' : worth}
-    <div class="buzzer-ring"><button class="buzzer ${buzzedOn ? 'on' : ''}" data-action="big-buzz" ${st.done || !open.length ? 'disabled' : ''} aria-label="Buzz">${buzzedOn ? 'BUZZED!' : 'BUZZ'}</button></div>
-    <div>
-      <div class="label" style="margin-bottom:8px">${prompt}</div>
-      <div class="contestants">${game.teams.map((t, i) => contestantButton(i, st)).join('')}</div>
+  <main class="screen ${r.final ? 'final-stage' : ''}">
+    ${gameTopbar(`Song ${game.i + 1} / ${n}`, r.final)}
+    ${cartridge(`${r.code} · ${r.bonus ? 'Bonus round' : r.final ? 'Finale' : 'Round ' + roundNumber(r)}`, r.name, `Worth<br><b>${r.points}</b>`, transport())}
+    <div class="ask ${st.done ? 'done' : ''}">
+      <h2 class="neon">${ASK_LINES[it.ask]}</h2>
+      ${prompt ? `<p aria-live="polite">${prompt}</p>` : ''}
     </div>
-    <div class="bottom">${host}${adjustPanel()}</div>
-  </main>`;
-}
-
-// ---------- trivia ----------
-
-function renderTrivia(r) {
-  const it = item();
-  const st = game.item;
-  const n = items().length;
-  const marks = game.teams.map((t, i) => contestantButton(i, st, {
-    action: 'mark', on: st.marks[i], disabled: st.done,
-    note: st.marks[i] ? `RIGHT +${r.points}` : 'TAP IF RIGHT',
-  })).join('');
-  return `
-  <main class="screen">
-    ${gameTopbar(`Question ${game.i + 1} / ${n}`)}
-    <div class="paper-card question-card" style="border-top:6px solid var(--teal, #3E9E98)">
-      <div class="code">${r.code} · ${esc(r.name)}</div>
-      <div class="title">${esc(it.question)}</div>
-    </div>
-    <div class="timer-wrap ${st.timeLeft <= 5 ? 'urgent' : ''}" id="trivia-timer-wrap">
-      <span class="label">Seconds left</span>
-      <span id="trivia-timer">${flaps('trivia', st.timeLeft, 2, 'xl')}</span>
-    </div>
-    <div class="row center" style="margin-top:0">
-      <button class="btn btn-secondary" data-action="trivia-timer">${triviaTimer ? 'Pause timer' : st.timeLeft < r.seconds ? 'Resume timer' : `Start the ${r.seconds}-second timer`}</button>
-    </div>
-    ${st.revealed
-      ? `<div class="answer">${answerText('r4', it)}</div>
-         <div class="label">Tap every team that got it right</div>
-         <div class="marks">${marks}</div>`
-      : '<button class="btn btn-ghost" data-action="reveal">Reveal answer</button>'}
-    <div class="bottom">
-      <button class="btn btn-primary btn-wide" data-action="trivia-next" ${st.revealed ? '' : 'disabled'}>${game.i + 1 < n ? 'Award points, next' : 'Award points, finish'}</button>
-      ${adjustPanel()}
-    </div>
-  </main>`;
-}
-
-// ---------- final showdown ----------
-
-function envelope(category) {
-  return `<div class="envelope">
-    <svg class="flap-svg" aria-hidden="true" viewBox="0 0 350 44" preserveAspectRatio="none"><path d="M0 0 L175 40 L350 0" fill="#EDE3CC" stroke="#D6C9AA" stroke-width="1.5"/></svg>
-    <div class="seal" aria-hidden="true">MW</div>
-    <div class="code">TONIGHT'S CATEGORY</div>
-    <div class="title">${esc(category || 'Mystery')}</div>
-  </div>`;
-}
-
-function wagerMax(i) { return Math.max(0, game.teams[i].score); }
-
-function dialParts(max, w) {
-  const frac = max ? w / max : 0;
-  return {
-    needle: `calc(12px + (100% - 24px) * ${frac.toFixed(3)})`,
-    knob: `rotate(${(-135 + frac * 270).toFixed(0)}deg)`,
-  };
-}
-
-function renderFinal(r) {
-  const it = item();
-  const st = game.item;
-  const header = `
-    ${gameTopbar('Finale', true)}
-    <div style="text-align:center">
-      <h2 class="neon" style="font-size:38px;line-height:1.05;margin:0">Final Showdown</h2>
-      <p style="margin:2px 0 0;font-size:13px;color:var(--paper-warm)">One song. One wager. Bet wisely.</p>
-    </div>
-    ${envelope(it.category)}`;
-
-  if (st.step === 'wager') {
-    const cur = st.cur;
-    const t = game.teams[cur];
-    const max = wagerMax(cur);
-    const w = Math.min(st.draft, max);
-    const tabs = game.teams.map((x, i) => `
-      <button class="wager-tab ${i === cur ? 'on' : ''} ${st.sealed[i] ? 'sealed' : ''}" role="tab" aria-selected="${i === cur}" data-action="wager-tab" data-team="${i}">
-        ${esc(x.name)}<span class="s">${st.sealed[i] ? 'SEALED' : x.score + ' pts'}</span>
-      </button>`).join('');
-    const sealedCount = st.sealed.filter(Boolean).length;
-    let body;
-    if (st.sealed[cur]) {
-      body = `<div class="sealed-note">${esc(t.name)}'s wager is sealed.</div>
-        <button class="btn btn-ghost" data-action="unseal">Change ${esc(t.name)}'s wager</button>`;
-    } else {
-      const snap = (v) => Math.round(v / 5) * 5;
-      const d = dialParts(max, w);
-      body = `
-      ${glassPanel(`
-        <div class="dial" aria-hidden="true">
-          <div class="ticks">${'<span></span>'.repeat(21)}</div>
-          <div class="scale">${[0, snap(max * 0.25), snap(max * 0.5), snap(max * 0.75), max].map((v) => `<span>${v}</span>`).join('')}</div>
-          <div class="needle" id="needle" style="left:${d.needle}"></div>
-        </div>
-        <div class="tuner">
-          <div class="knob-outer" aria-hidden="true"><div class="knob-inner" id="knob" style="transform:${d.knob}"></div></div>
-          <label>TUNE YOUR WAGER
-            <input type="range" min="0" max="${max}" step="${max % 5 ? 1 : 5}" value="${w}" data-wager-range ${max ? '' : 'disabled'}>
-          </label>
-          <span id="wager-readout" aria-live="polite">${flaps('wager', w, 3, '', 'amber')}</span>
-        </div>`, 'dark')}
-      <div class="presets">
-        <button class="btn" data-action="preset" data-frac="0.1">Play it safe</button>
-        <button class="btn" data-action="preset" data-frac="0.5">Half</button>
-        <button class="btn" data-action="preset" data-frac="1">All in</button>
-      </div>
-      <p style="margin:0;text-align:center;font-size:13px;color:var(--paper-warm)">${max ? `Pass the phone to ${esc(t.name)}. No peeking, other teams.` : `${esc(t.name)} has no points to wager, so they play for pride.`}</p>`;
-    }
-    return `
-    <main class="screen final-stage">
-      ${header}
-      <div class="tabs-row" role="tablist" aria-label="Team wagering">${tabs}</div>
-      ${body}
-      <div class="bottom">
-        ${st.sealed[cur]
-          ? `<button class="btn btn-primary btn-wide" data-action="seal-next" ${sealedCount === st.sealed.length ? '' : 'disabled'}>Play the final track</button>`
-          : '<button class="btn btn-primary btn-wide" data-action="seal">Seal the envelope</button>'}
-        <p class="status-line">${sealedCount} of ${st.sealed.length} wagers sealed</p>
-      </div>
-    </main>`;
-  }
-
-  const marks = game.teams.map((t, i) => contestantButton(i, {}, {
-    action: 'mark', on: st.marks[i], disabled: false,
-    note: `WAGER ${st.wagers[i]} · ${st.marks[i] ? 'RIGHT' : 'TAP IF RIGHT'}`,
-  })).join('');
-  return `
-  <main class="screen final-stage">
-    ${header}
-    ${cartridge('Stereo 8 · Finale', 'The Final Track', 'B3<br>10 seconds', transport())}
-    <p class="status-line">Every team writes down the title and the artist.</p>
-    ${st.revealed
-      ? `<div class="answer">${answerText('final', it)}</div>
-         <div class="label">Tap every team that got both right</div>
-         <div class="marks">${marks}</div>`
-      : '<button class="btn btn-ghost" data-action="reveal">Reveal answer</button>'}
-    <div class="bottom">
-      ${st.revealed ? '<button class="btn btn-primary btn-wide" data-action="apply-final">Crown the champions</button>' : ''}
-    </div>
+    ${timer}
+    ${reveal}
+    ${keys}
+    <div class="contestants ${!all && !st.done ? 'buzzers' : ''}">${game.teams.map((t, i) => contestantButton(i, st)).join('')}</div>
+    <div class="bottom">${bottom}${adjustPanel()}</div>
   </main>`;
 }
 
@@ -569,13 +491,12 @@ function goldBadge() {
 }
 
 function renderRoundEnd(r) {
-  let nextIdx = game.r + 1;
-  while (nextIdx < ROUNDS.length && !roundItems(ROUNDS[nextIdx].id).length) nextIdx++;
-  const next = ROUNDS[nextIdx];
-  const nextLabel = !next ? 'See the final results' : next.type === 'final' ? 'On to the Final Showdown' : `On to Round ${roundNumber(next)}`;
+  const rounds = activeRounds();
+  const next = rounds[rounds.indexOf(r) + 1];
+  const nextLabel = !next ? 'See the final results' : next.final ? 'On to the Encore' : next.bonus ? 'On to the bonus round' : `On to Round ${roundNumber(next)}`;
   return `
   <main class="screen">
-    ${gameTopbar(r.type === 'final' ? 'After the final' : `After round ${roundNumber(r)}`)}
+    ${gameTopbar(`After round ${roundNumber(r)}`)}
     <div style="display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center">
       <div class="label" style="letter-spacing:.3em">This week's</div>
       <h2 class="neon" style="font-size:46px;line-height:1.05;margin:0">Hit Parade</h2>
@@ -584,7 +505,7 @@ function renderRoundEnd(r) {
     <div style="display:flex;flex-direction:column;gap:10px">${hitParade(true)}</div>
     ${goldBadge()}
     ${glassPanel(next
-      ? `<div class="label amber">Coming up next</div><div class="title-md">${next.type === 'final' ? 'The Final Showdown' : `Round ${roundNumber(next)} · ${esc(next.name)}`}</div><div style="font-size:13px;color:var(--paper-warm)">${esc(next.blurb)}</div>`
+      ? `<div class="label amber">Coming up next</div><div class="title-md">${esc(next.name)}</div><div style="font-size:13px;color:var(--paper-warm)">${esc(next.blurb)}</div>`
       : '<div class="label amber">Coming up next</div><div class="title-md">The final results</div>')}
     <div class="bottom"><button class="btn btn-primary btn-wide" data-action="next-round">${nextLabel}</button></div>
   </main>`;

@@ -1,5 +1,5 @@
-// The host's music library: lots of songs added in one go, which the game can
-// draw from at random instead of the hand-made tracks in the question pack.
+// The host's music library: lots of songs added in one go. Every game is dealt
+// from it at random, and each song's artist and title are the answers.
 // The files stay in this browser (IndexedDB), like every other audio file.
 // The list of songs (title, artist, file id) goes in localStorage.
 
@@ -7,7 +7,7 @@ const LIBRARY_KEY = 'musicalWhits.library.v1';
 const SETTINGS_KEY = 'musicalWhits.settings.v1';
 
 let library = loadJSON(LIBRARY_KEY) || [];
-let settings = { randomStart: false, useLibrary: false, ...(loadJSON(SETTINGS_KEY) || {}) };
+let settings = { randomStart: true, titleBonus: true, perRound: 8, ...(loadJSON(SETTINGS_KEY) || {}) };
 
 function saveLibrary() { saveJSON(LIBRARY_KEY, library); }
 function saveSettings() { saveJSON(SETTINGS_KEY, settings); }
@@ -157,42 +157,7 @@ function clearLibrary() {
   saveLibrary();
 }
 
-function shuffle(list) {
-  for (let i = list.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [list[i], list[j]] = [list[j], list[i]];
-  }
-  return list;
-}
-
-// Builds a fresh set of music rounds from the library, using each song at most once.
-// Lyric Gap and Trivia need words typed in, so those still come from the question pack.
-function libraryRounds() {
-  const songs = shuffle(library.slice());
-  const song = (s) => ({ title: s.title, artist: s.artist, audio: { kind: 'file', fileId: s.fileId, fileName: s.fileName }, start: 0 });
-  const out = { r1: [], r2: [], r5: [], final: [] };
-  if (songs.length) out.final.push({ category: 'Mystery track', ...song(songs.pop()) });
-  const targets = { r1: 10, r2: 8, r5: 6 };
-  const mashModes = ['layer', 'reverse', 'layer', 'slow', 'layer', 'reverse'];
-  let progress = true;
-  while (songs.length && progress) {
-    progress = false;
-    for (const rid of ['r1', 'r2', 'r5']) {
-      if (out[rid].length >= targets[rid] || !songs.length) continue;
-      if (rid === 'r5') {
-        const mode = mashModes[out.r5.length];
-        if (mode === 'layer' && songs.length >= 2) {
-          const a = songs.pop();
-          const b = songs.pop();
-          out.r5.push({ mode, ...song(a), title2: b.title, artist2: b.artist, audio2: song(b).audio, length: 20 });
-        } else {
-          out.r5.push({ mode: mode === 'layer' ? 'reverse' : mode, ...song(songs.pop()), length: 20 });
-        }
-      } else {
-        out[rid].push(song(songs.pop()));
-      }
-      progress = true;
-    }
-  }
-  return out;
+// The library as songs the game can deal into rounds.
+function librarySongs() {
+  return library.map((s) => ({ title: s.title, artist: s.artist, audio: { kind: 'file', fileId: s.fileId, fileName: s.fileName } }));
 }

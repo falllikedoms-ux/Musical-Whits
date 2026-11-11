@@ -1,24 +1,23 @@
-// Musical Wits: the game state and flow, the question editor and the event handling.
+// Musical Wits: the game state and flow, the song library screen and the event handling.
 // The game-show screens themselves are drawn in screens.js.
 
 const TEAM_KEYS = ['Q', 'P', 'Z', 'M'];
+const CHOICE_KEYS = ['A', 'B', 'C', 'D'];
 const DEFAULT_TEAM_NAMES = ['Treble Makers', 'Bass Pros', 'Note-orious', ''];
 const SETUP_KEY = 'musicalWhits.setup.v1';
-const MASHUP_MODES = { layer: 'Two songs layered', reverse: 'Played backwards', slow: 'Slowed down' };
-// Rounds where "random clip start" applies. Intro Sprint is about the intro, and
-// Lyric Gap has to stop right before its line, so those keep their set start.
-const RANDOM_START_ROUNDS = ['r1', 'r5', 'final'];
+const GAME_VERSION = 2;
+// When everyone answers at once, how long after the clip's own length answers stay open.
+const EXTRA_ANSWER_SECONDS = 7;
 
-let pack = loadJSON(PACK_KEY) || demoPack();
 let game = loadJSON(GAME_KEY);
+if (game && game.v !== GAME_VERSION) game = null; // a game saved by an older version
 let screen = 'home';
 let clip = null;
-let triviaTimer = null;
-let editorRound = 'r1';
+let answerTicker = null;
 let libraryOpen = false;
 let librarySearch = '';
 const LIBRARY_ROWS_SHOWN = 60;
-let setup = { count: 3, names: DEFAULT_TEAM_NAMES.slice(), noNegative: false, punIdx: 0, punTarget: 0, ...(loadJSON(SETUP_KEY) || {}) };
+let setup = { count: 3, names: DEFAULT_TEAM_NAMES.slice(), punIdx: 0, punTarget: 0, ...(loadJSON(SETUP_KEY) || {}) };
 function saveSetup() { saveJSON(SETUP_KEY, setup); }
 
 const app = document.getElementById('app');
@@ -37,51 +36,27 @@ function signed(n) {
   return (n > 0 ? '+' : '') + n;
 }
 
-function savePack() { saveJSON(PACK_KEY, pack); }
 function saveGame() { saveJSON(GAME_KEY, game); }
 
 function round() { return ROUNDS[game.r]; }
-// A game drawn from the music library carries its own tracks; otherwise they come from the pack.
-function roundItems(id) { return (game && game.items && game.items[id]) || pack[id] || []; }
+function roundItems(id) { return (game && game.items && game.items[id]) || []; }
 function items() { return roundItems(round().id); }
 function item() { return items()[game.i]; }
+// The rounds this game actually has songs for, in order.
+function activeRounds() { return ROUNDS.filter((r) => roundItems(r.id).length); }
+// The rounds a new game would have with the current options.
+function plannedRounds() { return ROUNDS.filter((r) => settings.titleBonus || !r.bonus); }
+function itemKey() { return `${game.id}:${game.r}:${game.i}`; }
+function answerWindowMs(r) { return (r.clipLength + EXTRA_ANSWER_SECONDS) * 1000; }
 
 function stopClip() {
   if (clip) { clip.stop(); clip.onupdate = null; clip.onend = null; }
   clip = null;
 }
 
-function stopTriviaTimer() {
-  clearInterval(triviaTimer);
-  triviaTimer = null;
-}
-
-// Builds the clip for a question, following each round's rules.
-// startAt overrides the track's own start (a number, or 'random').
-function makeClip(roundId, it, stageSeconds, startAt) {
-  const start = startAt !== undefined ? startAt : Number(it.start) || 0;
-  if (roundId === 'r2') return new Clip([it.audio], { start, length: stageSeconds });
-  if (roundId === 'r3') {
-    const stop = Number(it.stopAt);
-    return new Clip([it.audio], { start, length: stop > start ? stop - start : 15 });
-  }
-  if (roundId === 'r5') {
-    const len = Number(it.length) || 20;
-    if (it.mode === 'layer') return new Clip([it.audio, it.audio2], { start, length: len });
-    if (it.mode === 'reverse') return new Clip([it.audio], { start, length: len, reverse: true });
-    return new Clip([it.audio], { start, length: len, rate: 0.65 });
-  }
-  const r = ROUNDS.find((x) => x.id === roundId);
-  return new Clip([it.audio], { start, length: r.clipLength || 15 });
-}
-
-function answerText(roundId, it) {
-  if (roundId === 'r3') return `<div class="answer-line">"${esc(it.next)}"</div><div class="answer-sub">${esc(it.title)} · ${esc(it.artist)}</div>`;
-  if (roundId === 'r4') return `<div class="answer-line">${esc(it.answer)}</div>`;
-  if (roundId === 'r5' && it.mode === 'layer') {
-    return `<div class="answer-line">${esc(it.title)} <span class="dim">by ${esc(it.artist)}</span></div><div class="answer-line">${esc(it.title2)} <span class="dim">by ${esc(it.artist2)}</span></div>`;
-  }
-  return `<div class="answer-line">${esc(it.title)}</div><div class="answer-sub">${esc(it.artist)}</div>`;
+function stopAnswerTicker() {
+  clearInterval(answerTicker);
+  answerTicker = null;
 }
 
 // In-page pop-ups (some places that host the game block the browser's own dialogs).
@@ -150,28 +125,36 @@ function notify(message) {
 
 // ---------- scoring ----------
 
+// Points land on the scoreboard, and float up from the team's name for a moment.
 function addPoints(team, pts) {
-  if (game.noNegative && pts < 0) pts = 0;
   game.teams[team].score += pts;
-  if (pts !== 0) flashScore(team, pts);
-}
-
-function flashScore(team, pts) {
-  game.flash = { team, pts, at: Date.now() };
+  if (!pts) return;
+  if (!game.flash || Date.now() - game.flash.at > 300) game.flash = { at: Date.now(), pts: {} };
+  game.flash.pts[team] = (game.flash.pts[team] || 0) + pts;
 }
 
 // ---------- game flow ----------
 
 function newGame() {
   stopClip();
+  stopAnswerTicker();
+  const demo = !library.length;
+  const dealt = dealRounds(demo ? demoSongs() : librarySongs(), settings);
+  if (!ROUNDS.some((r) => (dealt[r.id] || []).length)) {
+    notify('None of your songs have an artist yet. Open Songs and type the artists in, or switch on the title bonus rounds.');
+    return;
+  }
   game = {
+    v: GAME_VERSION,
+    id: Date.now().toString(36),
     teams: setup.names.slice(0, setup.count).map((name, i) => ({ name: (name || '').trim() || 'Team ' + (i + 1), score: 0 })),
-    noNegative: setup.noNegative,
+    demo,
     randomStart: settings.randomStart,
-    items: settings.useLibrary && library.length ? libraryRounds() : null,
+    items: dealt,
     r: 0, i: 0, phase: 'intro',
     roundStart: [],
     item: null,
+    screenTeam: null,
     gold: { team: null, rounds: 0 },
   };
   skipEmptyRounds();
@@ -186,34 +169,48 @@ function skipEmptyRounds() {
   if (game.r >= ROUNDS.length) game.phase = 'end';
 }
 
+// Two ways to play a track:
+//   'all'  - phones are connected, so every team answers at once on its own device
+//   'buzz' - one shared screen: buzz in first, then pick the answer
 function freshItemState() {
-  const r = round();
-  if (r.type === 'trivia') return { timeLeft: r.seconds, revealed: false, marks: game.teams.map(() => false), done: false };
-  if (r.type === 'final') {
-    return { step: 'wager', wagers: game.teams.map(() => 0), sealed: game.teams.map(() => false), cur: 0, draft: 0, marks: game.teams.map(() => false), revealed: false };
-  }
-  return { locked: [], buzzed: null, picking: false, done: false, revealed: false, partial: false, stage: 0 };
+  const phones = window.Online ? Online.phoneCount() : 0;
+  return { mode: phones ? 'all' : 'buzz', locked: [], buzzed: null, struck: [], answers: {}, startedAt: null, done: false, clipStart: null };
+}
+
+function startItem() {
+  stopClip();
+  stopAnswerTicker();
+  game.item = freshItemState();
+  saveGame();
+  render();
+  playClip();
+  preloadNext();
+}
+
+// Gets the next song ready while this one plays, so there's no wait between tracks.
+function preloadNext() {
+  const next = items()[game.i + 1];
+  if (next) setTimeout(() => loadSource(next.audio).catch(() => {}), 1500);
 }
 
 function startRound() {
   game.phase = 'item';
   game.i = 0;
   game.roundStart = game.teams.map((t) => t.score);
-  game.item = freshItemState();
-  saveGame();
-  render();
+  startItem();
 }
 
 function nextItem() {
-  stopClip();
-  stopTriviaTimer();
   if (game.i + 1 < items().length) {
     game.i++;
-    game.item = freshItemState();
-  } else {
-    game.phase = round().type === 'final' ? 'end' : 'roundEnd';
-    if (game.phase === 'roundEnd') updateGold();
+    startItem();
+    return;
   }
+  stopClip();
+  stopAnswerTicker();
+  game.item = null;
+  game.phase = round().final ? 'end' : 'roundEnd';
+  if (game.phase === 'roundEnd') updateGold();
   saveGame();
   render();
 }
@@ -230,7 +227,7 @@ function updateGold() {
 
 function nextRound() {
   stopClip();
-  stopTriviaTimer();
+  stopAnswerTicker();
   game.r++;
   game.i = 0;
   skipEmptyRounds();
@@ -240,14 +237,14 @@ function nextRound() {
   render();
 }
 
+function playing() { return screen === 'game' && game && game.phase === 'item' && game.item && !game.item.done; }
+
+// One shared screen: the first team to buzz gets to answer.
 function buzz(team) {
-  if (screen !== 'game' || game.phase !== 'item') return;
-  const r = round();
+  if (!playing()) return;
   const st = game.item;
-  if (r.type === 'trivia' || r.type === 'final') return;
-  if (!game.teams[team] || st.done || st.buzzed !== null || st.locked.includes(team)) return;
+  if (st.mode !== 'buzz' || !game.teams[team] || st.buzzed !== null || st.locked.includes(team)) return;
   st.buzzed = team;
-  st.picking = false;
   playBuzz(team);
   if (navigator.vibrate) navigator.vibrate(80);
   if (clip) clip.pause();
@@ -255,65 +252,106 @@ function buzz(team) {
   render();
 }
 
-function judge(kind, points) {
+// A team tapped its name: buzz in, or (with phones) say "we're answering on this screen".
+function tapTeam(team) {
+  if (!playing() || !game.teams[team]) return;
+  if (game.item.mode === 'buzz') { buzz(team); return; }
+  if (game.item.answers[team]) return;
+  game.screenTeam = game.screenTeam === team ? null : team;
+  saveGame();
+  render();
+}
+
+// A choice was tapped on the host's screen.
+function tapChoice(c) {
+  if (!playing()) return;
   const st = game.item;
-  const team = st.buzzed;
-  if (team === null) return;
-  addPoints(team, points);
-  if (kind === 'correct') {
-    st.done = true;
-    st.revealed = true;
-    st.buzzed = null;
-    if (clip) clip.pause();
-    playJingle(true);
+  if (st.mode === 'buzz') { if (st.buzzed !== null) answer(st.buzzed, c); return; }
+  if (game.screenTeam === null || !game.teams[game.screenTeam]) { notify('Tap your team first, then your answer.'); return; }
+  answer(game.screenTeam, c);
+}
+
+// The game is the judge: a team's choice is checked against the song's own artist or title.
+function answer(team, c) {
+  if (!playing()) return;
+  const st = game.item;
+  const it = item();
+  const r = round();
+  if (!game.teams[team] || !Number.isInteger(c) || c < 0 || c >= it.choices.length) return;
+  if (st.mode === 'all') {
+    if (st.answers[team] || st.startedAt === null) return;
+    st.answers[team] = { c, ms: Date.now() - st.startedAt };
+    playBuzz(team);
+    if (Object.keys(st.answers).length >= game.teams.length) { finishItem(); return; }
   } else {
+    if (st.buzzed !== team || st.struck.includes(c)) return;
+    if (c === it.correct) {
+      st.answers[team] = { c, pts: r.points };
+      finishItem();
+      return;
+    }
+    st.answers[team] = { c, pts: 0 };
+    st.struck.push(c);
     st.locked.push(team);
     st.buzzed = null;
-    if (kind === 'partial') st.partial = true;
-    playJingle(kind === 'partial');
-    if (clip && clip.pos < clip.duration - 0.05) clip.play();
+    if (st.locked.length >= game.teams.length) { finishItem(); return; }
+    playJingle(false);
+    if (clip && clip.pos < clip.duration - 0.05) clip.play().then(updatePlayButton);
   }
   saveGame();
   render();
 }
 
-function optionsFor(r, it, st) {
-  if (r.type === 'sprint') {
-    const pts = r.stagePoints[Math.max(0, st.stage - 1)];
-    return [
-      { label: 'Correct title', points: pts, kind: 'correct' },
-      { label: 'Wrong', points: r.wrongPoints, kind: 'wrong' },
-    ];
-  }
-  if (r.id === 'r5') {
-    if (it.mode !== 'layer') return [{ label: 'Correct song', points: 15, kind: 'correct' }, { label: 'Wrong', points: 0, kind: 'wrong' }];
-    if (st.partial) return r.options.filter((o) => o.label.startsWith('Steal') || o.kind === 'wrong');
-    return r.options.filter((o) => !o.label.startsWith('Steal'));
-  }
-  return r.options;
+// Closes the track: scores every answer and shows who was right.
+function finishItem() {
+  if (!playing()) return;
+  const st = game.item;
+  const it = item();
+  const r = round();
+  st.done = true;
+  st.buzzed = null;
+  stopAnswerTicker();
+  const total = answerWindowMs(r);
+  let anyRight = false;
+  Object.entries(st.answers).forEach(([team, a]) => {
+    if (st.mode === 'all') {
+      a.pts = a.c === it.correct ? r.points + Math.round(speedBonus(r) * Math.max(0, 1 - a.ms / total)) : 0;
+    }
+    if (a.pts) { anyRight = true; addPoints(+team, a.pts); }
+  });
+  playJingle(anyRight);
+  // Let the song play on under the answer.
+  if (clip && !clip.playing && clip.pos < clip.duration - 0.05) clip.play().then(updatePlayButton);
+  saveGame();
+  render();
 }
 
-async function playClip(stageSeconds) {
+async function playClip() {
   const r = round();
   const it = item();
   const st = game.item;
-  const random = game.randomStart && RANDOM_START_ROUNDS.includes(r.id);
   try {
-    if (r.type === 'sprint') {
-      stopClip();
-      clip = makeClip(r.id, it, stageSeconds);
-    } else if (!clip) {
+    if (!clip) {
       // Keep the same random spot if the clip is rebuilt (after a refresh, say).
-      clip = makeClip(r.id, it, undefined, st.clipStart != null ? st.clipStart : random ? 'random' : undefined);
+      const start = st.clipStart != null ? st.clipStart : game.randomStart ? 'random' : 0;
+      clip = new Clip([it.audio], { start, length: r.clipLength });
     }
+    const mine = clip;
     clip.onupdate = updateProgress;
     clip.onend = () => { updatePlayButton(); };
     await clip.play();
-    if (random && st.clipStart == null) { st.clipStart = clip.start; saveGame(); }
+    if (clip !== mine) { mine.stop(); return; }
+    if (st.clipStart == null) st.clipStart = clip.start;
     updatePlayButton();
   } catch (e) {
     clip = null;
     notify('Could not play this track: ' + e.message);
+  }
+  // The clock for answers starts with the music.
+  if (game && game.item === st && st.startedAt === null && !st.done) {
+    st.startedAt = Date.now();
+    saveGame();
+    render();
   }
 }
 
@@ -334,11 +372,28 @@ function updateProgress(pos, dur) {
 }
 
 function updatePlayButton() {
-  const playing = !!(clip && clip.playing);
+  const on = !!(clip && clip.playing);
   const btn = document.getElementById('play-btn');
-  if (btn) { btn.innerHTML = icon(playing ? 'pause' : 'play'); btn.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
+  if (btn) { btn.innerHTML = icon(on ? 'pause' : 'play'); btn.setAttribute('aria-label', on ? 'Pause' : 'Play'); }
   const deck = document.getElementById('cartridge');
-  if (deck) deck.classList.toggle('playing', playing);
+  if (deck) deck.classList.toggle('playing', on);
+}
+
+// The countdown while everyone answers at once.
+function answerTimeLeft() {
+  const st = game.item;
+  if (!st || st.startedAt === null) return answerWindowMs(round());
+  return Math.max(0, st.startedAt + answerWindowMs(round()) - Date.now());
+}
+
+function tickAnswers() {
+  if (!playing() || game.item.mode !== 'all' || game.item.startedAt === null) { stopAnswerTicker(); return; }
+  const left = answerTimeLeft();
+  const bar = document.getElementById('answer-fill');
+  if (bar) bar.style.width = (left / answerWindowMs(round())) * 100 + '%';
+  const num = document.getElementById('answer-left');
+  if (num) num.textContent = Math.ceil(left / 1000);
+  if (left <= 0) finishItem();
 }
 
 // ---------- rendering ----------
@@ -359,124 +414,23 @@ function afterGameRender() {
     updateProgress(clip.pos, clip.duration || 0);
     updatePlayButton();
   }
+  if (playing() && game.item.mode === 'all' && game.item.startedAt !== null) {
+    if (!answerTicker) answerTicker = setInterval(tickAnswers, 200);
+    tickAnswers();
+  }
   if (game.flash) setTimeout(() => {
     document.querySelectorAll('.contestant .flash').forEach((el) => el.remove());
   }, 1500);
 }
 
-// ---------- trivia timer ----------
-
-function toggleTriviaTimer() {
-  if (triviaTimer) { stopTriviaTimer(); render(); return; }
-  const st = game.item;
-  if (st.timeLeft <= 0) st.timeLeft = round().seconds;
-  triviaTimer = setInterval(() => {
-    st.timeLeft--;
-    const el = document.getElementById('trivia-timer');
-    if (el) el.innerHTML = flaps('trivia', st.timeLeft, 2, 'xl');
-    const wrap = document.getElementById('trivia-timer-wrap');
-    if (wrap) wrap.classList.toggle('urgent', st.timeLeft <= 5);
-    if (st.timeLeft <= 0) {
-      stopTriviaTimer();
-      playJingle(false);
-      render();
-    }
-  }, 1000);
-  render();
-}
-
-// ---------- editor ----------
-
-function audioPicker(path, src) {
-  src = src || { kind: 'tune', tune: 'twinkle' };
-  const kinds = [['tune', 'Built-in tune'], ['file', 'Audio file from this device'], ['url', 'Web link to an audio file']];
-  let detail = '';
-  if (src.kind === 'tune') {
-    detail = `<select data-path="${path}.tune">${Object.entries(TUNES).map(([id, t]) => `<option value="${id}" ${src.tune === id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`;
-  } else if (src.kind === 'file') {
-    detail = `<span class="file-name">${src.fileName ? esc(src.fileName) : 'No file chosen yet'}</span>
-      <label class="btn btn-secondary file-btn">${src.fileName ? 'Choose a different file' : 'Choose audio file'}
-        <input class="file-input" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac" data-file-path="${path}">
-      </label>
-      <span class="hint">If no file picker opens, open this page in your phone's browser (Chrome or Safari) instead of inside another app, or use a web link.</span>`;
-  } else {
-    detail = `<input type="url" placeholder="https://example.com/song.mp3" value="${esc(src.url || '')}" data-path="${path}.url">`;
-  }
-  return `<div class="audio-picker">
-    <select data-path="${path}.kind" data-rerender="1">${kinds.map(([k, l]) => `<option value="${k}" ${src.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-    ${detail}
-  </div>`;
-}
-
-function field(label, path, value, type = 'text', extra = '') {
-  return `<label class="field"><span>${label}</span><input type="${type}" value="${esc(value)}" data-path="${path}" ${type === 'number' ? 'step="0.1" min="0"' : ''} ${extra}></label>`;
-}
-
-function editorItem(rid, it, idx) {
-  const p = rid + '.' + idx;
-  let fields = '';
-  if (rid === 'r4') {
-    fields = field('Question', p + '.question', it.question) + field('Answer', p + '.answer', it.answer);
-  } else {
-    if (rid === 'final') fields += field('Category (announced before wagers)', p + '.category', it.category);
-    if (rid === 'r5') {
-      fields += `<label class="field"><span>Style</span><select data-path="${p}.mode" data-rerender="1">${Object.entries(MASHUP_MODES).map(([k, l]) => `<option value="${k}" ${it.mode === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
-    }
-    fields += `<div class="field-row">${field(rid === 'r5' && it.mode === 'layer' ? 'Song 1 title' : 'Song title', p + '.title', it.title)}${field('Artist', p + '.artist', it.artist)}</div>`;
-    fields += `<div class="field"><span>Music</span>${audioPicker(p + '.audio', it.audio)}</div>`;
-    if (rid === 'r5' && it.mode === 'layer') {
-      fields += `<div class="field-row">${field('Song 2 title', p + '.title2', it.title2)}${field('Artist', p + '.artist2', it.artist2)}</div>`;
-      fields += `<div class="field"><span>Song 2 music</span>${audioPicker(p + '.audio2', it.audio2)}</div>`;
-    }
-    if (rid === 'r3') {
-      fields += field('Lyric shown on screen (optional)', p + '.before', it.before);
-      fields += field('Answer: the next line', p + '.next', it.next);
-    }
-    fields += `<div class="field-row">${field('Clip starts at (seconds)', p + '.start', it.start, 'number')}`;
-    if (rid === 'r3') fields += field('Stop the music at (seconds)', p + '.stopAt', it.stopAt, 'number');
-    if (rid === 'r5') fields += field('Clip length (seconds)', p + '.length', it.length || 20, 'number');
-    fields += '</div>';
-  }
-  return `<div class="edit-item">
-    <div class="edit-item-head">
-      <b>${rid === 'r4' ? 'Question' : 'Track'} ${idx + 1}</b>
-      <div class="row">
-        ${rid !== 'r4' ? `<button class="btn btn-ghost btn-small" data-action="preview" data-idx="${idx}">▶ Preview</button>` : ''}
-        <button class="btn btn-ghost btn-small" data-action="move" data-idx="${idx}" data-dir="-1" ${idx === 0 ? 'disabled' : ''}>↑</button>
-        <button class="btn btn-ghost btn-small" data-action="move" data-idx="${idx}" data-dir="1">↓</button>
-        <button class="btn btn-ghost btn-small danger" data-action="remove" data-idx="${idx}">Delete</button>
-      </div>
-    </div>
-    ${fields}
-  </div>`;
-}
+// ---------- songs: the music library ----------
 
 function renderEditor() {
-  const r = ROUNDS.find((x) => x.id === editorRound);
-  const list = pack[editorRound] || [];
-  const tabs = ROUNDS.map((x) => `<button class="tab ${x.id === editorRound ? 'on' : ''}" data-action="editor-tab" data-round="${x.id}">${esc(x.name)} <span class="dim">(${(pack[x.id] || []).length})</span></button>`).join('');
   return `
   <main class="editor">
     ${topbar('Songs', { actions: '<button class="btn btn-primary btn-small" data-action="home">Done</button>' })}
-    <div class="screen-title">Songs and questions</div>
-    <p class="hint" style="margin:0">Changes save automatically in this browser. Audio files you add stay on this computer and are never uploaded. Recommended counts from the rules: 10, 8, 8, 10, 6 and 1. Leave a round empty to skip it.</p>
+    <div class="screen-title">Your songs</div>
     ${renderLibrary()}
-    <nav class="tabs">${tabs}</nav>
-    <section class="card"><div class="card-body">
-      <h2>${esc(r.name)}</h2>
-      <ul class="rules small">${r.rules.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      ${list.map((it, idx) => editorItem(editorRound, it, idx)).join('') || '<p class="dim">No tracks yet. This round will be skipped.</p>'}
-      <button class="dashed-btn" data-action="add-item">+ Add ${editorRound === 'r4' ? 'question' : 'track'}</button>
-    </div></section>
-    <section class="card"><div class="card-body">
-      <h2>Backup</h2>
-      <p class="dim">Save your question pack to a file, or load one. (Audio files are not included; built-in tunes and web links are.)</p>
-      <div class="row">
-        <button class="btn btn-secondary" data-action="export">Download pack</button>
-        <label class="btn btn-secondary file-btn">Load pack<input class="file-input" type="file" accept=".json,application/json" data-import></label>
-        <button class="btn btn-ghost danger" data-action="reset-pack">Reset to starter pack</button>
-      </div>
-    </div></section>
   </main>`;
 }
 
@@ -526,25 +480,35 @@ function renderLibrary() {
     </div></section>`;
 }
 
-function getPath(path) {
-  return path.split('.').reduce((o, k) => (o == null ? o : o[k]), pack);
-}
-
-function setPath(path, value) {
-  const keys = path.split('.');
-  let o = pack;
-  keys.slice(0, -1).forEach((k) => { if (o[k] == null) o[k] = {}; o = o[k]; });
-  o[keys[keys.length - 1]] = value;
-  savePack();
-}
-
-function newEditorItem(rid) {
-  if (rid === 'r4') return { question: '', answer: '' };
-  const base = { title: '', artist: '', audio: { kind: 'file' }, start: 0 };
-  if (rid === 'r3') return { ...base, before: '', next: '', stopAt: 10 };
-  if (rid === 'r5') return { ...base, mode: 'layer', title2: '', artist2: '', audio2: { kind: 'file' }, length: 20 };
-  if (rid === 'final') return { ...base, category: '' };
-  return base;
+function renderLibrary() {
+  const n = library.length;
+  const accept = 'audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac';
+  const noArtist = library.filter((s) => !s.artist).length;
+  const artists = new Set(library.filter((s) => s.artist).map((s) => s.artist.trim().toLowerCase())).size;
+  let health = '';
+  if (n) {
+    health = `<p class="lib-health">${artists} different artist${artists === 1 ? '' : 's'}.`
+      + (noArtist ? ` <b>${noArtist} song${noArtist === 1 ? ' has' : 's have'} no artist</b>, so ${noArtist === 1 ? 'it' : 'they'} can only be used in title bonus rounds. Type the artist in below to fix that.` : '')
+      + (artists < 4 ? ' The game is more fun with at least 4 different artists; until then it fills the choices with famous names.' : '') + '</p>';
+  }
+  return `
+    <section class="card library"><div class="card-body">
+      <h2>My music library <span class="dim">(${n} song${n === 1 ? '' : 's'})</span></h2>
+      <p>Add your music and every new game picks songs from it at random, with no song played twice in a game. The game reads each song's <b>artist</b> and <b>title</b> from the file, and those are the answers it checks, so nobody has to judge.</p>
+      <div class="row">
+        <label class="btn btn-primary file-btn">+ Add songs<input class="file-input" type="file" multiple accept="${accept}" data-library-add></label>
+        ${nativeFolderPicker()
+          ? '<button class="btn btn-secondary" data-action="native-folder">Add a whole folder</button>'
+          : '<label class="btn btn-secondary file-btn">Add a whole folder<input class="file-input" type="file" webkitdirectory multiple data-library-add></label>'}
+        ${n ? '<button class="btn btn-ghost danger" data-action="clear-library">Remove all</button>' : ''}
+      </div>
+      ${health}
+      <p class="hint">Names come from the tags inside each file, or from a file name like <b>Artist - Title.mp3</b>. <b>Add a whole folder</b> takes every song in the folder you pick, including the album folders inside it. If your phone only lets you pick single files here, use the Musical Wits Android app, or use <b>+ Add songs</b>: open an album, press and hold one song, then pick <b>Select all</b>. Songs are copied into this browser on this device and are never uploaded.</p>
+      ${n ? `<details class="lib-list" ${libraryOpen ? 'open' : ''}><summary>Search and check songs (${n})</summary>
+        <input type="search" class="lib-search" placeholder="Search by song, artist or album" value="${esc(librarySearch)}" data-lib-search aria-label="Search your library">
+        <p class="hint">Fix any names that look wrong. They are the answers the game checks.</p>
+        <div id="lib-rows">${renderLibraryRows()}</div></details>` : '<p class="hint">No songs yet? The game plays its built-in demo tunes until you add some.</p>'}
+    </div></section>`;
 }
 
 let previewClip = null;
@@ -559,42 +523,15 @@ async function previewLibrary(idx) {
   }
 }
 
-async function preview(idx) {
-  if (previewClip && previewClip.playing) { previewClip.stop(); previewClip = null; return; }
-  try {
-    previewClip = makeClip(editorRound, pack[editorRound][idx], editorRound === 'r2' ? 5 : undefined);
-    await previewClip.play();
-  } catch (e) {
-    notify('Could not play this track: ' + e.message);
-  }
-}
-
-// Moves the tuning dial without redrawing the screen, so dragging stays smooth.
-function setWagerDraft(v) {
-  const st = game.item;
-  const max = wagerMax(st.cur);
-  st.draft = Math.max(0, Math.min(max, v));
-  const d = dialParts(max, st.draft);
-  const needle = document.getElementById('needle');
-  const knob = document.getElementById('knob');
-  const readout = document.getElementById('wager-readout');
-  const range = document.querySelector('[data-wager-range]');
-  if (needle) needle.style.left = d.needle;
-  if (knob) knob.style.transform = d.knob;
-  if (readout) readout.innerHTML = flaps('wager', st.draft, 3, '', 'amber');
-  if (range && +range.value !== st.draft) range.value = st.draft;
-}
-
 // ---------- events ----------
 
 app.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
   const a = el.dataset.action;
-  const st = game && game.item;
   switch (a) {
-    case 'open-teams': screen = 'teams'; render(); break;
-    case 'howto': screen = 'howto'; render(); break;
+    case 'open-teams': screen = 'teams'; render(); window.scrollTo(0, 0); break;
+    case 'howto': screen = 'howto'; render(); window.scrollTo(0, 0); break;
     case 'round-info': showRoundInfo(el.dataset.round); break;
     case 'pun': pullLever(); break;
     case 'add-team': if (setup.count < 4) { setup.count++; saveSetup(); render(); } break;
@@ -607,98 +544,28 @@ app.addEventListener('click', (e) => {
       render();
       break;
     }
-    case 'big-buzz':
-      if (st.buzzed !== null || st.done) break;
-      st.picking = !st.picking;
-      if (st.picking) { if (clip) clip.pause(); updatePlayButton(); playBuzz(0); }
-      render();
-      break;
     case 'new-game':
       if (game && game.phase !== 'end') ask('Start a new game? The game in progress will be lost.', 'Start new game', newGame);
       else newGame();
       break;
     case 'resume': screen = 'game'; render(); break;
-    case 'open-editor': screen = 'editor'; render(); break;
-    case 'home': stopClip(); stopTriviaTimer(); if (previewClip) previewClip.stop(); screen = 'home'; render(); window.scrollTo(0, 0); break;
-    case 'play-again': game = null; saveGame(); screen = 'home'; render(); break;
+    case 'open-editor': screen = 'editor'; render(); window.scrollTo(0, 0); break;
+    case 'home': stopClip(); stopAnswerTicker(); if (previewClip) previewClip.stop(); screen = 'home'; render(); window.scrollTo(0, 0); break;
+    case 'play-again': game = null; saveGame(); screen = 'teams'; render(); break;
     case 'skip-round':
       ask('Skip the rest of this round?', 'Skip round', () => {
-        if (round().type === 'final') { game.phase = 'end'; stopClip(); saveGame(); render(); } else nextRound();
+        if (round().final) { game.phase = 'end'; game.item = null; stopClip(); stopAnswerTicker(); saveGame(); render(); } else nextRound();
       });
       break;
     case 'start-round': startRound(); break;
     case 'next-round': nextRound(); break;
-    case 'buzz': buzz(+el.dataset.team); break;
+    case 'team': tapTeam(+el.dataset.team); break;
+    case 'choice': tapChoice(+el.dataset.choice); break;
     case 'adjust': addPoints(+el.dataset.team, +el.dataset.pts); saveGame(); render(); break;
     case 'toggle-play': togglePlay(); break;
     case 'restart': restartClip(); break;
-    case 'stage': {
-      const k = +el.dataset.stage;
-      st.stage = Math.max(st.stage, k + 1);
-      saveGame();
-      render();
-      playClip(round().stages[k]);
-      break;
-    }
-    case 'judge': judge(el.dataset.kind, +el.dataset.points); break;
-    case 'reveal': st.revealed = true; if (round().type !== 'trivia' && round().type !== 'final') st.done = true; saveGame(); render(); break;
+    case 'reveal': finishItem(); break;
     case 'next-item': nextItem(); break;
-    case 'trivia-timer': toggleTriviaTimer(); break;
-    case 'mark': st.marks[+el.dataset.team] = !st.marks[+el.dataset.team]; saveGame(); render(); break;
-    case 'trivia-next':
-      if (!st.done) {
-        st.done = true;
-        st.marks.forEach((m, i) => { if (m) game.teams[i].score += round().points; });
-        if (st.marks.some(Boolean)) playJingle(true);
-      }
-      nextItem();
-      break;
-    // final showdown wagers: one team at a time, kept secret
-    case 'wager-tab': st.cur = +el.dataset.team; st.draft = 0; render(); break;
-    case 'preset': {
-      const max = wagerMax(st.cur);
-      const v = +el.dataset.frac === 1 ? max : Math.round((max * +el.dataset.frac) / 5) * 5;
-      setWagerDraft(Math.min(max, v));
-      break;
-    }
-    case 'seal': {
-      st.wagers[st.cur] = Math.max(0, Math.min(wagerMax(st.cur), Math.floor(st.draft) || 0));
-      st.sealed[st.cur] = true;
-      st.draft = 0;
-      const next = st.sealed.findIndex((x) => !x);
-      if (next >= 0) st.cur = next; else st.step = 'play';
-      saveGame();
-      render();
-      break;
-    }
-    case 'unseal': st.sealed[st.cur] = false; st.draft = 0; saveGame(); render(); break;
-    case 'seal-next': if (st.sealed.every(Boolean)) { st.step = 'play'; saveGame(); render(); } break;
-    case 'apply-final':
-      stopClip();
-      game.roundStart = game.teams.map((t) => t.score);
-      st.marks.forEach((m, i) => { game.teams[i].score += m ? st.wagers[i] : -st.wagers[i]; });
-      playJingle(true);
-      game.phase = 'end';
-      saveGame();
-      render();
-      break;
-    // editor
-    case 'editor-tab': if (previewClip) previewClip.stop(); editorRound = el.dataset.round; render(); break;
-    case 'add-item': (pack[editorRound] = pack[editorRound] || []).push(newEditorItem(editorRound)); savePack(); render(); break;
-    case 'remove':
-      ask('Delete this ' + (editorRound === 'r4' ? 'question' : 'track') + '?', 'Delete', () => { pack[editorRound].splice(+el.dataset.idx, 1); savePack(); render(); });
-      break;
-    case 'move': {
-      const list = pack[editorRound];
-      const i = +el.dataset.idx;
-      const j = i + +el.dataset.dir;
-      if (j < 0 || j >= list.length) return;
-      [list[i], list[j]] = [list[j], list[i]];
-      savePack();
-      render();
-      break;
-    }
-    case 'preview': preview(+el.dataset.idx); break;
     case 'lib-preview': previewLibrary(+el.dataset.idx); break;
     case 'lib-remove': {
       const s = library[+el.dataset.idx];
@@ -720,17 +587,6 @@ app.addEventListener('click', (e) => {
     case 'clear-library':
       ask(`Remove all ${library.length} songs from your library? The files on your device itself are not touched.`, 'Remove all', () => { clearLibrary(); render(); });
       break;
-    case 'export': {
-      const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = 'musical-wits-pack.json';
-      link.click();
-      break;
-    }
-    case 'reset-pack':
-      ask('Replace all your questions with the starter pack?', 'Replace', () => { pack = demoPack(); savePack(); render(); });
-      break;
   }
 });
 
@@ -740,7 +596,6 @@ app.addEventListener('input', (e) => {
     if (/\n/.test(t.value)) { t.value = t.value.replace(/\n/g, ''); t.blur(); }
     setup.names[+t.dataset.setupName] = t.value; saveSetup();
   }
-  if (t.dataset.wagerRange !== undefined) setWagerDraft(+t.value);
   if (t.dataset.libSearch !== undefined) {
     librarySearch = t.value;
     document.getElementById('lib-rows').innerHTML = renderLibraryRows();
@@ -749,50 +604,13 @@ app.addEventListener('input', (e) => {
 
 app.addEventListener('change', async (e) => {
   const t = e.target;
-  if (t.dataset.action === 'no-negative') { setup.noNegative = t.checked; saveSetup(); return; }
-  if (t.dataset.setting) { settings[t.dataset.setting] = t.checked; saveSettings(); return; }
+  if (t.dataset.setting) {
+    settings[t.dataset.setting] = t.type === 'checkbox' ? t.checked : +t.value;
+    saveSettings();
+    return;
+  }
   if (t.dataset.libField) { library[+t.dataset.lib][t.dataset.libField] = t.value.trim(); saveLibrary(); return; }
-  if (t.dataset.libraryAdd !== undefined && t.files.length) {
-    await addSongs(t.files);
-    return;
-  }
-  if (t.dataset.path) {
-    const val = t.type === 'number' ? (t.value === '' ? '' : +t.value) : t.value;
-    setPath(t.dataset.path, val);
-    if (t.dataset.path.endsWith('.kind')) {
-      const base = t.dataset.path.slice(0, -5);
-      const fresh = { kind: val };
-      if (val === 'tune') fresh.tune = 'twinkle';
-      setPath(base, fresh);
-    }
-    if (t.dataset.rerender) render();
-    return;
-  }
-  if (t.dataset.filePath && t.files[0]) {
-    const file = t.files[0];
-    const id = 'f' + Date.now() + Math.random().toString(36).slice(2, 7);
-    const old = getPath(t.dataset.filePath);
-    await FileStore.put(id, file);
-    if (old && old.fileId) FileStore.remove(old.fileId).catch(() => {});
-    setPath(t.dataset.filePath, { kind: 'file', fileId: id, fileName: file.name });
-    // Fill in the title from the file name if it is empty.
-    const itemPath = t.dataset.filePath.replace(/\.audio2?$/, '');
-    const titleKey = t.dataset.filePath.endsWith('audio2') ? 'title2' : 'title';
-    if (!getPath(itemPath + '.' + titleKey)) setPath(itemPath + '.' + titleKey, file.name.replace(/\.[^.]+$/, ''));
-    render();
-    return;
-  }
-  if (t.dataset.import !== undefined && t.files[0]) {
-    try {
-      const data = JSON.parse(await t.files[0].text());
-      if (!data || typeof data !== 'object' || !ROUNDS.some((r) => Array.isArray(data[r.id]))) throw new Error('not a Musical Wits pack');
-      pack = data;
-      savePack();
-      render();
-    } catch (err) {
-      notify('Could not load that file: ' + err.message);
-    }
-  }
+  if (t.dataset.libraryAdd !== undefined && t.files.length) await addSongs(t.files);
 });
 
 // Remember whether the song list is open across re-renders.
@@ -800,18 +618,17 @@ app.addEventListener('toggle', (e) => { if (e.target.classList.contains('lib-lis
 
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('input, select, textarea')) return;
+  const k = e.key.toUpperCase();
+  const choice = '1234'.includes(e.key) && e.key ? +e.key - 1 : CHOICE_KEYS.indexOf(k);
   if (screen === 'player' && window.Online) {
-    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); Online.press(); }
+    if (choice >= 0) { e.preventDefault(); Online.pick(choice); }
     return;
   }
   if (screen !== 'game' || !game || game.phase !== 'item') return;
-  const k = e.key.toUpperCase();
   const team = TEAM_KEYS.indexOf(k);
-  if (team >= 0) { e.preventDefault(); buzz(team); return; }
-  if (e.key === ' ') {
-    const type = round().type;
-    if (type === 'buzz' || (type === 'final' && game.item.step === 'play')) { e.preventDefault(); togglePlay(); }
-  }
+  if (team >= 0) { e.preventDefault(); tapTeam(team); return; }
+  if (choice >= 0) { e.preventDefault(); tapChoice(choice); return; }
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
 });
 
 render();
