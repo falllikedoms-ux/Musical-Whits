@@ -43,6 +43,13 @@ jobs:
           cp -r android-src/res/. android/app/src/main/res/
           sed -i 's/>#[0-9A-Fa-f]*</>#0B0D1A</' android/app/src/main/res/values/ic_launcher_background.xml || true
 
+      # Every build is signed with the same key, so a new app installs over the old one
+      # and keeps its songs. Without this each build gets a different key and Android refuses the update.
+      - name: Use the same signing key every time
+        run: |
+          mkdir -p ~/.android
+          cp android-src/debug.keystore ~/.android/debug.keystore
+
       - name: Build the APK
         working-directory: android
         run: ./gradlew assembleDebug
