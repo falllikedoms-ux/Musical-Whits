@@ -7,7 +7,7 @@ const LIBRARY_KEY = 'musicalWhits.library.v1';
 const SETTINGS_KEY = 'musicalWhits.settings.v1';
 
 let library = loadJSON(LIBRARY_KEY) || [];
-let settings = { randomStart: true, titleBonus: true, perRound: 8, ...(loadJSON(SETTINGS_KEY) || {}) };
+let settings = { randomStart: true, titleBonus: true, usePool: true, perRound: 8, ...(loadJSON(SETTINGS_KEY) || {}) };
 
 function saveLibrary() { saveJSON(LIBRARY_KEY, library); }
 function saveSettings() { saveJSON(SETTINGS_KEY, settings); }

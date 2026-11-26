@@ -78,12 +78,15 @@ window.PeerRoom = (() => {
     }
     const phones = new Map();
     const peerFns = [];
+    const events = emitter();
     const view = (id) => ({ peer: id, presence: { ...phones.get(id).presence }, sameTab: false });
     const list = () => [...phones.keys()].filter((id) => phones.get(id).joined).map(view);
     const tell = (change) => peerFns.forEach((fn) => fn({ peers: list(), joined: [], left: [], updated: [], ...change }));
 
     peer.on('connection', (conn) => {
       conn.on('data', (msg) => {
+        // A message from a phone to the host (a list of shared songs, a clip of one).
+        if (msg && msg.type === 'msg') { events.fire(msg.topic, { topic: msg.topic, from: conn.peer, data: msg.data, sameTab: false }); return; }
         if (!msg || msg.type !== 'presence') return;
         let phone = phones.get(conn.peer);
         if (!phone) { phone = { conn, presence: {}, joined: false }; phones.set(conn.peer, phone); }
@@ -104,7 +107,14 @@ window.PeerRoom = (() => {
 
     return {
       code,
-      on: emitter().on,
+      on: events.on,
+      // To one phone only; false if it isn't connected.
+      sendTo(peerId, topic, data) {
+        const phone = phones.get(peerId);
+        if (!phone || !phone.conn.open) return false;
+        phone.conn.send({ type: 'emit', topic, data });
+        return true;
+      },
       async emit(topic, data) {
         for (const { conn } of phones.values()) if (conn.open) conn.send({ type: 'emit', topic, data });
       },
@@ -151,6 +161,12 @@ window.PeerRoom = (() => {
       code,
       on: events.on,
       async emit() {},
+      // To the host: send(topic, data). False if the link is down right now.
+      send(topic, data) {
+        if (!conn || !conn.open) return false;
+        conn.send({ type: 'msg', topic, data });
+        return true;
+      },
       async presence(patch) {
         merge(mine, patch);
         if (conn && conn.open) conn.send({ type: 'presence', patch });

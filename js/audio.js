@@ -12,9 +12,37 @@ const bufferCache = {};
 
 // Returns { buffer } for anything we can decode, or { url } for a web link
 // that the browser will only play through an <audio> element.
+// Whole songs take a lot of memory once decoded, so keep only the last few.
+function remember(key, result) {
+  const keys = Object.keys(bufferCache);
+  if (keys.length >= 4) delete bufferCache[keys[0]];
+  bufferCache[key] = result;
+}
+
+// A clip of a song that lives on a player's phone: the phone cuts it and sends just that part.
+const clipsOnTheWay = {};
+async function loadRemote(src) {
+  const key = ['remote', src.peer, src.songId, src.length, src.random ? 'r' : 's'].join(':');
+  if (bufferCache[key]) return bufferCache[key];
+  if (!clipsOnTheWay[key]) {
+    clipsOnTheWay[key] = (async () => {
+      if (!window.Online || !Online.fetchClip) throw new Error('This copy of the game cannot play songs from phones.');
+      const c = await Online.fetchClip(src);
+      const buffer = getCtx().createBuffer(1, c.pcm.length, c.rate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < c.pcm.length; i++) data[i] = c.pcm[i] / 32768;
+      return { buffer };
+    })().finally(() => { delete clipsOnTheWay[key]; });
+  }
+  const result = await clipsOnTheWay[key];
+  remember(key, result);
+  return result;
+}
+
 async function loadSource(src) {
   if (!src) throw new Error('No audio chosen for this track.');
   if (src.kind === 'tune') return { buffer: await renderTune(src.tune) };
+  if (src.kind === 'remote') return loadRemote(src);
   const key = src.kind + ':' + (src.fileId || src.url);
   if (bufferCache[key]) return bufferCache[key];
   let result;
@@ -31,10 +59,7 @@ async function loadSource(src) {
       result = { url: src.url };
     }
   }
-  // Whole songs take a lot of memory once decoded, so keep only the last few.
-  const keys = Object.keys(bufferCache);
-  if (keys.length >= 4) delete bufferCache[keys[0]];
-  bufferCache[key] = result;
+  remember(key, result);
   return result;
 }
 
