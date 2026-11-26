@@ -158,12 +158,29 @@ function renderTeams() {
       <label class="check select">Songs in each main round
         <select data-setting="perRound">${[5, 8, 10, 15].map((v) => `<option value="${v}" ${settings.perRound === v ? 'selected' : ''}>${v}</option>`).join('')}</select>
       </label>
-      <p class="hint check-hint">${lib ? `Songs come from your music library (${lib} song${lib === 1 ? '' : 's'}).` : 'No songs added yet, so this game uses the demo tunes. Add your music under <b>Songs</b> on the jukebox.'}</p>
+      <div id="pool-note">${poolNoteHtml()}</div>
     </details></div>
     <div class="bottom">
       <button class="btn btn-primary btn-wide" data-action="new-game">Start the show</button>
     </div>
   </main>`;
+}
+
+// The songs a new game will draw from: this device's library and songs shared by phones in the room.
+function poolNoteHtml() {
+  const lib = library.length;
+  const p = window.Online ? Online.poolInfo() : { songs: 0, phones: 0 };
+  const use = p.songs > 0 && settings.usePool;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  let html = '';
+  if (p.songs) {
+    html += `<label class="check"><input type="checkbox" data-setting="usePool" ${settings.usePool ? 'checked' : ''}> Include songs shared from phones in the room (${plural(p.songs, 'song')} from ${plural(p.phones, 'phone')})</label>`;
+  }
+  const from = [lib ? `your music library (${plural(lib, 'song')})` : '', use ? `phones in the room (${plural(p.songs, 'song')})` : ''].filter(Boolean).join(' and ');
+  html += from
+    ? `<p class="hint check-hint">Songs come from ${from}.</p>`
+    : '<p class="hint check-hint">No songs added yet, so this game uses the demo tunes. Add your music under <b>Songs</b> on the jukebox' + (window.Online && Online.canPool() ? ', or ask players to tap <b>Share my songs</b> on their phones' : '') + '.</p>';
+  return html;
 }
 
 // Pulls the Pun-O-Matic lever: the reel spins, then the pun lands in the next empty team name.
@@ -388,7 +405,7 @@ function renderItem(r) {
   let prompt;
   if (st.done) prompt = '';
   else if (all) {
-    prompt = !started ? 'Get ready...'
+    prompt = !started ? (it.audio.kind === 'remote' ? 'Getting the clip from a phone...' : 'Get ready...')
       : game.screenTeam !== null && !st.answers[game.screenTeam] ? `${esc(game.teams[game.screenTeam].name)}, tap your answer`
         : 'Answer on your phone. Playing on this screen? Tap your team.';
   } else {
@@ -418,6 +435,7 @@ function renderItem(r) {
       <div class="label">${it.ask === 'artist' ? 'The artist' : 'The song'}</div>
       <div class="answer-line">${esc(it.ask === 'artist' ? it.artist : it.title)}</div>
       <div class="answer-sub">${it.ask === 'artist' ? `“${esc(it.title)}”` : it.artist ? `by ${esc(it.artist)}` : ''}</div>
+      ${it.audio.kind === 'remote' && window.Online ? `<div class="answer-sub shared">Shared by ${esc(Online.ownerLabel(it.audio.peer))}</div>` : ''}
     </div>` : '';
 
   const bottom = st.done

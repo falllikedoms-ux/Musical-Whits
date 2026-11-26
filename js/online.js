@@ -76,7 +76,12 @@ window.Online = (() => {
     linkStatus = 'connecting';
     render();
     try {
-      room = await PeerRoom.join(code, (status) => { linkStatus = status; if (screen === 'player') render(); });
+      room = await PeerRoom.join(code, (status) => {
+        linkStatus = status;
+        // Each time the link comes up, tell the host about the songs this phone is sharing.
+        if (status === 'connected') setTimeout(sendSongs, 300);
+        if (screen === 'player') render();
+      });
       listen();
       if (myTeam !== null) room.presence({ team: myTeam });
     } catch (err) {
@@ -92,6 +97,7 @@ window.Online = (() => {
     roomCode = null;
     hostState = null;
     canHost = false;
+    Object.keys(pool).forEach((k) => delete pool[k]);
     linkStatus = '';
     clearInterval(keepalive);
     saveJSON(HOST_CODE_KEY, null);
@@ -112,8 +118,11 @@ window.Online = (() => {
       hostHeardAt = Date.now();
       if (screen === 'player') render();
     });
+    if (mode === 'code' && room.sendTo) listenForSongs();
+    if (mode === 'code' && room.send) room.on('clip-req', (msg) => answerClipRequest((msg && msg.data) || {}));
     room.onPeers((change) => {
       if (change.joined.length) lastSent = '';
+      if ((change.left || []).length) change.left.forEach((p) => forgetPhone(p.peer));
       if (isHosting()) {
         change.joined.forEach(onPlayerUpdate);
         change.updated.forEach(onPlayerUpdate);
@@ -124,6 +133,154 @@ window.Online = (() => {
     });
     clearInterval(keepalive);
     keepalive = setInterval(() => sendState(true), 3000);
+  }
+
+  // ---------- the shared pool of songs ----------
+  // A player's phone can share its songs. Only the artist and title are listed on the host's
+  // screen. When one of those songs is played, the host asks that phone for a short clip, which
+  // arrives as raw sound, plays once and is never saved.
+
+  const SHARE_KEY = 'musicalWhits.share';
+  const CLIP_RATE = 22050;
+  const pool = {}; // phone id -> [{ id, title, artist }]
+  const waiting = {}; // clip request id -> { resolve, reject, peer, timer }
+  let sharing = loadJSON(SHARE_KEY) === true;
+  let requests = 0;
+
+  function canPool() { return mode === 'code' && !!room && canHost; }
+
+  function poolInfo() {
+    const lists = Object.values(pool);
+    return { songs: lists.reduce((n, l) => n + l.length, 0), phones: lists.filter((l) => l.length).length };
+  }
+
+  function poolSongs() {
+    if (!canPool()) return [];
+    return Object.entries(pool).flatMap(([peer, list]) => list.map((s) => ({ title: s.title, artist: s.artist, audio: { kind: 'remote', peer, songId: s.id } })));
+  }
+
+  function ownerLabel(peer) {
+    const p = room && room.peers ? room.peers().find((x) => x.peer === peer) : null;
+    const team = p ? game && game.teams[Number(p.presence.team)] : null;
+    return team ? `${team.name}'s phone` : 'a phone in the room';
+  }
+
+  function updatePoolNote() {
+    const el = document.getElementById('pool-note');
+    if (el) el.innerHTML = poolNoteHtml();
+  }
+
+  function listenForSongs() {
+    room.on('songs', (msg) => {
+      const raw = msg && msg.data && Array.isArray(msg.data.songs) ? msg.data.songs : [];
+      const list = raw.slice(0, 5000)
+        .filter((x) => x && x.id != null && (x.title || x.artist))
+        .map((x) => ({ id: String(x.id).slice(0, 60), title: String(x.title || '').slice(0, 120), artist: String(x.artist || '').slice(0, 120) }));
+      if (list.length) pool[msg.from] = list; else delete pool[msg.from];
+      updatePoolNote();
+    });
+    room.on('clip', (msg) => {
+      const d = (msg && msg.data) || {};
+      const w = waiting[d.id];
+      if (!w || w.peer !== msg.from) return;
+      clearTimeout(w.timer);
+      delete waiting[d.id];
+      if (!d.ok || !d.pcm) { w.reject(new Error(d.error || 'The phone could not read that song.')); return; }
+      const raw = d.pcm instanceof ArrayBuffer ? d.pcm : d.pcm.buffer.slice(d.pcm.byteOffset, d.pcm.byteOffset + d.pcm.byteLength);
+      const rate = Number(d.rate);
+      w.resolve({ rate: rate >= 8000 && rate <= 48000 ? rate : CLIP_RATE, pcm: new Int16Array(raw, 0, Math.floor(raw.byteLength / 2)) });
+    });
+  }
+
+  function forgetPhone(peer) {
+    delete pool[peer];
+    Object.entries(waiting).forEach(([id, w]) => {
+      if (w.peer !== peer) return;
+      clearTimeout(w.timer);
+      delete waiting[id];
+      w.reject(new Error('The phone that has this song left the room.'));
+    });
+    updatePoolNote();
+  }
+
+  // Host: ask a phone for a clip of one of its songs.
+  function fetchClip(src) {
+    return new Promise((resolve, reject) => {
+      if (!canPool() || !pool[src.peer]) { reject(new Error('The phone that has this song is not connected.')); return; }
+      const id = Date.now().toString(36) + (++requests);
+      const timer = setTimeout(() => { delete waiting[id]; reject(new Error('The phone took too long to send the clip.')); }, 25000);
+      waiting[id] = { resolve, reject, peer: src.peer, timer };
+      if (!room.sendTo(src.peer, 'clip-req', { id, songId: src.songId, length: src.length, random: !!src.random })) {
+        clearTimeout(timer);
+        delete waiting[id];
+        reject(new Error('The phone that has this song is not connected.'));
+      }
+    });
+  }
+
+  // Phone: tell the host which songs this phone shares (an empty list when sharing is off).
+  function sendSongs() {
+    if (mode !== 'code' || canHost || !room || !room.send) return;
+    const songs = sharing ? library.slice(0, 5000).map((s) => ({ id: s.fileId, title: s.title, artist: s.artist })) : [];
+    room.send('songs', { songs });
+  }
+
+  function setSharing(on) {
+    sharing = on;
+    saveJSON(SHARE_KEY, on);
+    sendSongs();
+    render();
+  }
+
+  // Phone: cut a clip out of a song and send it, as mono sound at a low sample rate to keep it small.
+  async function answerClipRequest(req) {
+    const reply = (d) => room.send('clip', { id: req.id, ...d });
+    try {
+      if (!sharing) throw new Error('Sharing is switched off on that phone.');
+      const song = library.find((s) => s.fileId === req.songId);
+      if (!song) throw new Error('That phone no longer has the song.');
+      const { buffer } = await loadSource({ kind: 'file', fileId: song.fileId, fileName: song.fileName });
+      if (!buffer) throw new Error('That phone could not read the song.');
+      const length = Math.min(30, Math.max(1, Number(req.length) || 15));
+      const slack = buffer.duration - length;
+      const start = req.random && slack > 0 ? +(Math.random() * slack).toFixed(1) : 0;
+      const pcm = clipToPcm(buffer, start, length);
+      reply({ ok: true, rate: CLIP_RATE, pcm: pcm.buffer, start });
+    } catch (e) {
+      reply({ ok: false, error: e.message });
+    }
+  }
+
+  function clipToPcm(buffer, start, length) {
+    const sr = buffer.sampleRate;
+    const from = Math.floor(start * sr);
+    const to = Math.min(buffer.length, Math.floor((start + length) * sr));
+    const ratio = sr / CLIP_RATE;
+    const n = Math.max(0, Math.floor((to - from) / ratio));
+    const out = new Int16Array(n);
+    const chans = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+    for (let i = 0; i < n; i++) {
+      const a = from + Math.floor(i * ratio);
+      const b = Math.max(a + 1, from + Math.floor((i + 1) * ratio));
+      let sum = 0;
+      let count = 0;
+      for (let k = a; k < b && k < to; k++) for (const ch of chans) { sum += ch[k]; count++; }
+      out[i] = Math.max(-1, Math.min(1, count ? sum / count : 0)) * 32767;
+    }
+    return out;
+  }
+
+  function shareCard() {
+    if (mode !== 'code' || !room || !room.send) return '';
+    const n = library.length;
+    if (!n) {
+      return '<p class="hint" style="text-align:center">Want your own songs in the game? Add some under <b>Songs</b> (Menu, then Songs), then rejoin and tap <b>Share my songs</b>.</p>';
+    }
+    return `<div class="share-card">
+      <button class="btn ${sharing ? 'btn-primary btn-small' : 'btn-secondary'}" data-online="share">${sharing ? `Sharing ${n} song${n === 1 ? '' : 's'} · tap to stop` : `Share my ${n} song${n === 1 ? '' : 's'}`}</button>
+      <p class="hint">Only a short clip is sent when one of your songs plays, and nothing is saved. Keep this page open during the show.</p>
+    </div>`;
   }
 
   function isHosting() {
@@ -258,6 +415,7 @@ window.Online = (() => {
         : 'Keep this page open. The game appears here as soon as the host starts the show.';
       return `<main class="screen">${head}
         ${dome('Player', 'Waiting', msg)}
+        ${shareCard()}
       </main>`;
     }
     if (myTeam === null || !s.teams[myTeam]) {
@@ -266,6 +424,7 @@ window.Online = (() => {
         <div class="chrome-rule" aria-hidden="true"></div>
         <div class="team-pick">${s.teams.map((t, i) => `
           <button class="btn pick team-${i}" data-online="team" data-team="${i}">${esc(t.name)}</button>`).join('')}</div>
+        ${shareCard()}
       </main>`;
     }
     const team = s.teams[myTeam];
@@ -305,6 +464,7 @@ window.Online = (() => {
       <h2 class="player-team">${esc(team.name)}</h2>
       ${body}
       ${standings(s)}
+      ${shareCard()}
       <div class="bottom"><button class="btn btn-ghost" data-online="switch">Change team</button></div>
     </main>`;
   }
@@ -378,6 +538,7 @@ window.Online = (() => {
     else if (a === 'team') chooseTeam(+el.dataset.team);
     else if (a === 'switch') { myTeam = null; saveJSON(TEAM_KEY, null); room.presence({ team: null }).catch(() => {}); render(); }
     else if (a === 'choice') pick(+el.dataset.choice);
+    else if (a === 'share') setSharing(!sharing);
   });
 
   // Keep the "waiting" message honest if the host goes quiet.
@@ -387,5 +548,5 @@ window.Online = (() => {
   });
 
   setTimeout(start); // after window.Online exists, since start() re-renders
-  return { renderPlayer, homeCard, afterRender, pick, phoneCount, teamHasPhone };
+  return { renderPlayer, homeCard, afterRender, pick, phoneCount, teamHasPhone, canPool, poolInfo, poolSongs, ownerLabel, fetchClip };
 })();

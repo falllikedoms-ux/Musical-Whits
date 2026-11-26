@@ -641,3 +641,8 @@ input.lib-search { margin-top: .6em; }
 .contestants.buzzers .contestant:not(:disabled) { min-height: 84px; font-size: 15px; box-shadow: 0 5px 0 rgba(0, 0, 0, .45); }
 .contestants.buzzers .contestant:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0, 0, 0, .45); }
 .check.select select { flex: none; }
+
+/* sharing songs from a phone */
+.share-card { text-align: center; }
+.share-card .hint { margin: 6px 0 0; }
+.answer-sub.shared { margin-top: 2px; font-weight: 500; font-style: italic; }

@@ -46,6 +46,10 @@ Every player answers on their own phone or computer, Android or iPhone. When the
 
 Everyone needs internet. Phones connect straight to the host's screen; PeerJS's free public server only introduces them. Keep the host's screen open: if it refreshes, the same room comes back and phones reconnect by themselves.
 
+### Sharing songs from phones
+
+Players can add their own songs to the pool. On a joined phone, tap **Share my songs**. The host's game then mixes those songs in with the host's own library (there's a checkbox under Game options to turn that off). Nothing is uploaded or saved: when a shared song comes up, the host asks that phone for a short clip, plays it, and forgets it. The phone has to stay connected with the page open. If it has left, the game says so and skips to the next song. This works from the GitHub Pages address and the Android app, not in the claude.ai copy.
+
 **In the claude.ai copy:** share the game from the page's **Share** menu. Players open it, tap **Join as a player** and pick their team. They need to be signed in to claude.ai.
 
 ## Rounds

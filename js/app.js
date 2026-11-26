@@ -46,6 +46,11 @@ function item() { return items()[game.i]; }
 function activeRounds() { return ROUNDS.filter((r) => roundItems(r.id).length); }
 // The rounds a new game would have with the current options.
 function plannedRounds() { return ROUNDS.filter((r) => settings.titleBonus || !r.bonus); }
+// What the clip player is given for a song: songs on a phone also need the round's clip length.
+function clipAudio(it) {
+  if (it.audio.kind !== 'remote') return it.audio;
+  return { ...it.audio, length: round().clipLength, random: !!game.randomStart };
+}
 function itemKey() { return `${game.id}:${game.r}:${game.i}`; }
 function answerWindowMs(r) { return (r.clipLength + EXTRA_ANSWER_SECONDS) * 1000; }
 
@@ -138,8 +143,15 @@ function addPoints(team, pts) {
 function newGame() {
   stopClip();
   stopAnswerTicker();
-  const demo = !library.length;
-  const dealt = dealRounds(demo ? demoSongs() : librarySongs(), settings);
+  // The host's own library, plus whatever phones in the room are sharing (no song twice).
+  const songs = librarySongs();
+  const seen = new Set(songs.map((s) => (s.artist + '|' + s.title).toLowerCase()));
+  (settings.usePool && window.Online ? Online.poolSongs() : []).forEach((s) => {
+    const k = (s.artist + '|' + s.title).toLowerCase();
+    if (!seen.has(k)) { seen.add(k); songs.push(s); }
+  });
+  const demo = !songs.length;
+  const dealt = dealRounds(demo ? demoSongs() : songs, settings);
   if (!ROUNDS.some((r) => (dealt[r.id] || []).length)) {
     notify('None of your songs have an artist yet. Open Songs and type the artists in, or switch on the title bonus rounds.');
     return;
@@ -190,7 +202,7 @@ function startItem() {
 // Gets the next song ready while this one plays, so there's no wait between tracks.
 function preloadNext() {
   const next = items()[game.i + 1];
-  if (next) setTimeout(() => loadSource(next.audio).catch(() => {}), 1500);
+  if (next) setTimeout(() => loadSource(clipAudio(next)).catch(() => {}), 1500);
 }
 
 function startRound() {
@@ -334,7 +346,7 @@ async function playClip() {
     if (!clip) {
       // Keep the same random spot if the clip is rebuilt (after a refresh, say).
       const start = st.clipStart != null ? st.clipStart : game.randomStart ? 'random' : 0;
-      clip = new Clip([it.audio], { start, length: r.clipLength });
+      clip = new Clip([clipAudio(it)], { start, length: r.clipLength });
     }
     const mine = clip;
     clip.onupdate = updateProgress;
@@ -345,6 +357,12 @@ async function playClip() {
     updatePlayButton();
   } catch (e) {
     clip = null;
+    if (it.audio.kind === 'remote' && game && game.item === st) {
+      // The phone that owns this song went away or couldn't send it: move on to the next song.
+      notify(e.message + ' Skipping to the next song.');
+      setTimeout(() => { if (game && game.item === st && !st.done && screen === 'game') nextItem(); }, 2500);
+      return;
+    }
     notify('Could not play this track: ' + e.message);
   }
   // The clock for answers starts with the music.
